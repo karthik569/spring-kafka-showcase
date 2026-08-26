@@ -1,0 +1,40 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: spring-kafka-showcase
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+    consumer:
+      group-id: showcase-default-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.example.springkafka.*"
+    listener:
+      ack-mode: RECORD
+
+app:
+  kafka:
+    topics:
+      standard: "orders.standard"
+      high-priority: "orders.high-priority"
+      retryable: "orders.retryable"
+      retryable-dlt: "orders.retryable.DLT"
+      batch: "orders.batch"
+      transactional: "events.transactional"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
