@@ -2,6 +2,8 @@
 
 A comprehensive, production-grade Spring Boot application demonstrating the full suite of **Apache Kafka** capabilities on **Java 21** and **Spring Boot 3.3**.
 
+> 💡 **New to Apache Kafka?** Check out the step-by-step [Getting Started Guide](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/GETTING_STARTED_WITH_KAFKA.md) for conceptual explanations, interactive tutorials, and CLI cheat sheets.
+
 ---
 
 ## 🏛 Architecture & Message Flow
@@ -101,6 +103,15 @@ mvn spring-boot:run
 
 ---
 
+## 📖 Interactive Swagger UI & OpenAPI Documentation
+
+The application exposes an interactive OpenAPI 3.0 test bench to document and execute requests live:
+
+- **Swagger UI**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) (redirects to `/swagger-ui/index.html`)
+- **OpenAPI v3 Spec (JSON)**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
+
+---
+
 ## 🧪 Interactive API Testing & cURL Commands
 
 ### 1. Publish to Standard Topic (Key-based Partitioning)
@@ -156,3 +167,24 @@ curl http://localhost:8080/api/kafka/audit/dlt
 # Summary counts
 curl http://localhost:8080/api/kafka/audit/summary
 ```
+
+---
+
+## 🪵 Logging & Diagnostic Files
+
+The application features a production-grade Logback mechanism ([`logback-spring.xml`](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/src/main/resources/logback-spring.xml)) writing categorized logs to the `logs/` directory with size-and-time-based rolling policies:
+
+| Log File | Description | Rolling Policy |
+| :--- | :--- | :--- |
+| `logs/spring-kafka-showcase.log` | Complete application event log (HTTP requests, producer dispatches, consumer offsets, audit entries) | 10MB per file, 30 days retention (`.gz` compression) |
+| `logs/spring-kafka-showcase-error.log` | Dedicated error and exception log (DLT routing, listener errors, broker timeouts) | 10MB per file, filtered to `ERROR` level only |
+
+### Tailing Logs in Real Time
+```bash
+# Tail all application events
+tail -f logs/spring-kafka-showcase.log
+
+# Tail errors and Dead Letter Queue exceptions
+tail -f logs/spring-kafka-showcase-error.log
+```
+

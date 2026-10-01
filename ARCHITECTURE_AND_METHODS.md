@@ -57,6 +57,16 @@ The application runs on port `8080` and connects to Termux's local Apache Kafka 
 - **`NewTopic ordersRetryableDltTopic()`**:
   - *Purpose*: Creates `orders.retryable.DLT` (Dead Letter Topic) with 3 partitions to receive poisoned or unprocessable messages.
 
+#### [`KafkaProducerConfig.java`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/config/KafkaProducerConfig.java)
+- **`BeanPostProcessor kafkaTemplatePostProcessor()`**:
+  - *Purpose*: Hooks into `KafkaTemplate` initialization to invoke `template.setAllowNonTransactional(true)`.
+  - *Internal Mechanics*: Enables the application to support transactional multi-message sends via `executeInTransaction` (`spring.kafka.producer.transaction-id-prefix: tx-`) while allowing simple fire-and-forget asynchronous publishes (`sendAsync`, `sendWithHeaders`) on the exact same shared `KafkaTemplate` bean without throwing `IllegalStateException`.
+
+#### [`OpenApiConfig.java`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/config/OpenApiConfig.java)
+- **`OpenAPI customOpenAPI()`**:
+  - *Purpose*: Configures OpenAPI 3.0 specification metadata, Swagger UI display title, version, documentation descriptions, server endpoints, and logical tagging (`Kafka Producer API`, `Kafka Audit API`).
+  - *Access URLs*: Interactive Swagger UI at `http://localhost:8080/swagger-ui.html` and raw JSON spec at `http://localhost:8080/v3/api-docs`.
+
 #### [`KafkaConsumerConfig.java`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/config/KafkaConsumerConfig.java)
 - **`ConcurrentKafkaListenerContainerFactory<String, OrderEvent> filterContainerFactory(...)`**:
   - *Purpose*: Instantiates a listener container factory with an inline `RecordFilterStrategy`.

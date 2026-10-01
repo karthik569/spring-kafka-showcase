@@ -34,4 +34,6 @@ target/
 *sa-key*.json
 *.env
 *.log
+logs/
 .DS_Store
+

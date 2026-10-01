@@ -11,6 +11,7 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       acks: all
       retries: 3
+      transaction-id-prefix: tx-
       properties:
         enable.idempotence: true
     consumer:
@@ -38,3 +39,24 @@ management:
     web:
       exposure:
         include: health,info,metrics
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+
+logging:
+  file:
+    name: logs/spring-kafka-showcase.log
+  level:
+    root: INFO
+    com.example.springkafka: DEBUG
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN
+
+
