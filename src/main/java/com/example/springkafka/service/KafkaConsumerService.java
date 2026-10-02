@@ -48,15 +48,24 @@ public class KafkaConsumerService {
     private final List<AuditRecord> nonblockingRecords = new CopyOnWriteArrayList<>();
     private final List<AuditRecord> manualAckRecords = new CopyOnWriteArrayList<>();
     private final List<AuditRecord> avroRecords = new CopyOnWriteArrayList<>();
+    private final List<AuditRecord> outboxRecords = new CopyOnWriteArrayList<>();
+    private final List<com.example.springkafka.dto.EnrichedOrderEvent> joinedRecords = new CopyOnWriteArrayList<>();
+    private final List<AuditRecord> encryptedRecords = new CopyOnWriteArrayList<>();
+    private final List<AuditRecord> tieredRecords = new CopyOnWriteArrayList<>();
 
     private final com.example.springkafka.avro.AvroSerializerService avroSerializer;
+    private final com.example.springkafka.security.FieldEncryptionService encryptionService;
 
-    public KafkaConsumerService(com.example.springkafka.avro.AvroSerializerService avroSerializer) {
+    public KafkaConsumerService(
+            com.example.springkafka.avro.AvroSerializerService avroSerializer,
+            com.example.springkafka.security.FieldEncryptionService encryptionService) {
         this.avroSerializer = avroSerializer;
+        this.encryptionService = encryptionService;
     }
 
     public KafkaConsumerService() {
         this.avroSerializer = new com.example.springkafka.avro.AvroSerializerService();
+        this.encryptionService = new com.example.springkafka.security.FieldEncryptionService();
     }
 
     /**
@@ -360,5 +369,100 @@ public class KafkaConsumerService {
 
     public Map<String, InventoryItem> getInventoryState() {
         return inventoryState;
+    }
+
+    /**
+     * Consumes Change Data Capture (CDC) events streamed from Transactional Outbox.
+     */
+    @KafkaListener(topics = "orders.outbox.cdc", groupId = "cdc-outbox-group")
+    public void consumeOutboxCdc(
+            ConsumerRecord<String, String> record,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset) {
+
+        log.info("[KAFKA-CONSUMER-CDC] Consumed CDC outbox event key={} partition={} offset={}",
+                record.key(), partition, offset);
+
+        outboxRecords.add(new AuditRecord(
+                topic,
+                partition,
+                offset,
+                record.key(),
+                new OrderEvent(record.key(), "CDC-CUST", "CDC-ITEM", 1, 0.0, "NORMAL", false, java.time.Instant.now().toString()),
+                "cdc-outbox-group",
+                java.time.Instant.now().toString(),
+                "CDC_CAPTURED: " + record.value()
+        ));
+    }
+
+    /**
+     * Consumes joined real-time stream enrichment events (Order + Inventory joined).
+     */
+    @KafkaListener(topics = "orders.joined.output", groupId = "joined-orders-group")
+    public void consumeJoinedOrder(ConsumerRecord<String, com.example.springkafka.dto.EnrichedOrderEvent> record) {
+        log.info("[KAFKA-CONSUMER-JOINED] Ingested real-time enriched event key={} sku={} totalCost={}",
+                record.key(), record.value().skuCode(), record.value().totalCost());
+        joinedRecords.add(record.value());
+    }
+
+    /**
+     * Consumes client-side encrypted records and decrypts sensitive PII fields.
+     */
+    @KafkaListener(topics = "orders.encrypted", groupId = "encrypted-orders-group")
+    public void consumeEncrypted(
+            @Payload OrderEvent encryptedEvent,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
+
+        String decryptedCustomer = encryptionService.decryptField(encryptedEvent.customerId());
+        log.info("[KAFKA-CONSUMER-ENCRYPTED] Decrypted customerId: '{}' -> '{}' for orderId={}",
+                encryptedEvent.customerId(), decryptedCustomer, encryptedEvent.orderId());
+
+        OrderEvent decrypted = new OrderEvent(
+                encryptedEvent.orderId(),
+                decryptedCustomer,
+                encryptedEvent.skuCode(),
+                encryptedEvent.quantity(),
+                encryptedEvent.price(),
+                encryptedEvent.priority(),
+                encryptedEvent.simulateFailure(),
+                encryptedEvent.timestamp()
+        );
+
+        encryptedRecords.add(AuditRecord.of(topic, partition, offset, key, decrypted, "encrypted-orders-group", "PII_DECRYPTED"));
+    }
+
+    /**
+     * Consumes from long-term tiered retention topic.
+     */
+    @KafkaListener(topics = "orders.tiered.retention", groupId = "tiered-retention-group")
+    public void consumeTieredRetention(
+            @Payload OrderEvent event,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
+
+        log.info("[KAFKA-CONSUMER-TIERED] Ingested cold/tiered storage event orderId={} offset={}", event.orderId(), offset);
+        tieredRecords.add(AuditRecord.of(topic, partition, offset, key, event, "tiered-retention-group", "TIERED_STORAGE_RETAINED"));
+    }
+
+    public List<AuditRecord> getOutboxRecords() {
+        return outboxRecords;
+    }
+
+    public List<com.example.springkafka.dto.EnrichedOrderEvent> getJoinedRecords() {
+        return joinedRecords;
+    }
+
+    public List<AuditRecord> getEncryptedRecords() {
+        return encryptedRecords;
+    }
+
+    public List<AuditRecord> getTieredRecords() {
+        return tieredRecords;
     }
 }

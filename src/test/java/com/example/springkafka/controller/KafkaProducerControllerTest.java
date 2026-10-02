@@ -47,9 +47,25 @@ class KafkaProducerControllerTest {
 
     @BeforeEach
     void setUp() {
+        StubProducerService stubProducer = new StubProducerService();
+        com.example.springkafka.avro.AvroSerializerService avroSerializer =
+                new com.example.springkafka.avro.AvroSerializerService();
+        com.example.springkafka.service.OutboxCdcService outboxService =
+                new com.example.springkafka.service.OutboxCdcService(stubProducer, objectMapper);
+        com.example.springkafka.security.FieldEncryptionService encryptionService =
+                new com.example.springkafka.security.FieldEncryptionService();
+        com.example.springkafka.service.OrderStreamsService streamsService =
+                new com.example.springkafka.service.OrderStreamsService(objectMapper) {
+                    @Override
+                    public void startTopology() {}
+                };
+
         KafkaProducerController controller = new KafkaProducerController(
-                new StubProducerService(),
-                new com.example.springkafka.avro.AvroSerializerService()
+                stubProducer,
+                avroSerializer,
+                outboxService,
+                encryptionService,
+                streamsService
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

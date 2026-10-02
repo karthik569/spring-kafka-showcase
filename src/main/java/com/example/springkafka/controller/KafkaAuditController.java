@@ -29,12 +29,18 @@ public class KafkaAuditController {
 
     private final KafkaConsumerService consumerService;
     private final OrderStreamsService streamsService;
+    private final com.example.springkafka.avro.SchemaRegistryService schemaRegistryService;
+    private final com.example.springkafka.service.OutboxCdcService outboxService;
 
     public KafkaAuditController(
             KafkaConsumerService consumerService,
-            OrderStreamsService streamsService) {
+            OrderStreamsService streamsService,
+            com.example.springkafka.avro.SchemaRegistryService schemaRegistryService,
+            com.example.springkafka.service.OutboxCdcService outboxService) {
         this.consumerService = consumerService;
         this.streamsService = streamsService;
+        this.schemaRegistryService = schemaRegistryService;
+        this.outboxService = outboxService;
     }
 
     @Operation(
@@ -190,5 +196,61 @@ public class KafkaAuditController {
     @GetMapping("/avro/schema")
     public String getAvroSchema() {
         return com.example.springkafka.avro.AvroSerializerService.ORDER_AVRO_SCHEMA_JSON;
+    }
+
+    @Operation(
+            summary = "Get all registered Schema Registry subjects and versions",
+            description = "Lists all schemas registered in the Schema Registry simulator, along with version and compatibility metadata."
+    )
+    @GetMapping("/schema-registry/subjects")
+    public Map<String, List<com.example.springkafka.avro.SchemaRegistryService.SchemaMetadata>> getSchemaRegistrySubjects() {
+        return schemaRegistryService.getAllSubjects();
+    }
+
+    @Operation(
+            summary = "Register new schema version under a subject",
+            description = "Registers an Avro schema version under a subject (e.g. 'orders.avro-value') with evolution compatibility enforcement."
+    )
+    @org.springframework.web.bind.annotation.PostMapping("/schema-registry/subjects/{subject}/versions")
+    public com.example.springkafka.avro.SchemaRegistryService.SchemaMetadata registerSchema(
+            @PathVariable String subject,
+            @org.springframework.web.bind.annotation.RequestBody String schemaJson) {
+        return schemaRegistryService.registerSchema(subject, schemaJson);
+    }
+
+    @Operation(
+            summary = "Get CDC Outbox audit trail",
+            description = "Returns all committed outbox events captured from local transactions and streamed to Kafka via CDC."
+    )
+    @GetMapping("/outbox-cdc")
+    public List<com.example.springkafka.dto.OutboxRecord> getOutboxRecords() {
+        return outboxService.getAllOutboxRecords();
+    }
+
+    @Operation(
+            summary = "Get real-time joined stream enrichments (KStream - KTable)",
+            description = "Returns enriched orders correlated with live inventory state in the streaming topology."
+    )
+    @GetMapping("/streams/joined")
+    public List<com.example.springkafka.dto.EnrichedOrderEvent> getJoinedEnrichments() {
+        return streamsService.getAllJoinedEnrichments();
+    }
+
+    @Operation(
+            summary = "Get decrypted PII audit trail (Field-Level Encryption)",
+            description = "Returns order records consumed from 'orders.encrypted' with customerId decrypted by the consumer."
+    )
+    @GetMapping("/encrypted")
+    public List<AuditRecord> getEncryptedAudit() {
+        return consumerService.getEncryptedRecords();
+    }
+
+    @Operation(
+            summary = "Get tiered / long-term retention topic messages",
+            description = "Returns records ingested from 'orders.tiered.retention' designed for long-term cold storage."
+    )
+    @GetMapping("/tiered")
+    public List<AuditRecord> getTieredAudit() {
+        return consumerService.getTieredRecords();
     }
 }

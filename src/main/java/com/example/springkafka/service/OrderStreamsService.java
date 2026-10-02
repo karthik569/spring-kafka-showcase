@@ -60,10 +60,14 @@ public class OrderStreamsService {
     @Value("${app.kafka.topics.streams-output:streams.analytics.output}")
     private String outputTopic;
 
+    @Value("${app.kafka.topics.joined-output:orders.joined.output}")
+    private String joinedOutputTopic;
+
     private final ObjectMapper objectMapper;
     private KafkaStreams kafkaStreams;
     private final Map<String, StreamAnalytics> inMemoryFallBackCache = new ConcurrentHashMap<>();
     private final Map<String, StreamAnalytics> inMemoryWindowCache = new ConcurrentHashMap<>();
+    private final List<com.example.springkafka.dto.EnrichedOrderEvent> inMemoryJoinedCache = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public OrderStreamsService(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -242,6 +246,14 @@ public class OrderStreamsService {
 
     public Optional<StreamAnalytics> getWindowedAnalyticsForCustomer(String customerId) {
         return Optional.ofNullable(inMemoryWindowCache.get(customerId));
+    }
+
+    public void recordJoinedEnrichment(com.example.springkafka.dto.EnrichedOrderEvent event) {
+        inMemoryJoinedCache.add(event);
+    }
+
+    public List<com.example.springkafka.dto.EnrichedOrderEvent> getAllJoinedEnrichments() {
+        return Collections.unmodifiableList(inMemoryJoinedCache);
     }
 
     public String getStreamsState() {

@@ -107,4 +107,38 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    @Bean
+    public NewTopic outboxCdcTopic() {
+        return TopicBuilder.name("orders.outbox.cdc")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic joinedOrdersTopic() {
+        return TopicBuilder.name("orders.joined.output")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic encryptedOrdersTopic() {
+        return TopicBuilder.name("orders.encrypted")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic tieredRetentionTopic() {
+        return TopicBuilder.name("orders.tiered.retention")
+                .partitions(3)
+                .replicas(1)
+                .config(org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG, "604800000") // 7 days
+                .config(org.apache.kafka.common.config.TopicConfig.SEGMENT_BYTES_CONFIG, "10485760") // 10MB segments
+                .build();
+    }
 }

@@ -91,6 +91,11 @@ A comprehensive, production-grade Spring Boot application demonstrating the full
 - `POST /api/kafka/publish/inventory`: Log compaction state upsert
 - `DELETE /api/kafka/publish/inventory/tombstone/{skuCode}`: Log compaction tombstone deletion
 - `POST /api/kafka/publish/streams-order`: Real-time Kafka Streams ingestion
+- `POST /api/kafka/publish/avro`: Compact Apache Avro binary serialization
+- `POST /api/kafka/publish/outbox-cdc`: Transactional Outbox pattern & CDC streaming
+- `POST /api/kafka/publish/encrypted`: Client-side AES envelope encryption for sensitive PII
+- `POST /api/kafka/publish/joined-enrichment`: Real-time KStream-KTable order + inventory join
+- `POST /api/kafka/publish/tiered-retention`: Cold/tiered retention topic publish
 
 ### 5. [`KafkaAuditController`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaAuditController.java)
 - `GET /api/kafka/audit/received`: Ingested standard & priority orders
@@ -100,6 +105,15 @@ A comprehensive, production-grade Spring Boot application demonstrating the full
 - `GET /api/kafka/audit/inventory`: Current compacted inventory key-value table
 - `GET /api/kafka/audit/streams/analytics`: All customer metrics aggregated by Kafka Streams
 - `GET /api/kafka/audit/streams/analytics/{customerId}`: Point query against local Streams state store
+- `GET /api/kafka/audit/streams/analytics/windowed`: 1-minute tumbling window metrics
+- `GET /api/kafka/audit/streams/joined`: Real-time KStream-KTable enriched orders
+- `GET /api/kafka/audit/avro`: Ingested records decoded from raw Apache Avro
+- `GET /api/kafka/audit/avro/schema`: Official JSON specification of OrderAvroRecord
+- `GET /api/kafka/audit/schema-registry/subjects`: Registered Schema Registry subjects and versions
+- `POST /api/kafka/audit/schema-registry/subjects/{subject}/versions`: Register new schema version
+- `GET /api/kafka/audit/outbox-cdc`: Outbox records streamed via CDC
+- `GET /api/kafka/audit/encrypted`: Consumer records with decrypted customer PII
+- `GET /api/kafka/audit/tiered`: Records in tiered/cold retention topic
 - `GET /api/kafka/audit/summary`: Global quantitative metric summary across all pipelines
 
 ---

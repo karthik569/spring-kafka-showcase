@@ -73,6 +73,20 @@ public class KafkaProducerService {
     }
 
     /**
+     * Publishes a raw String or Object payload asynchronously.
+     */
+    public CompletableFuture<PublishResponse> sendAsyncRaw(String topic, String key, Object payload) {
+        log.info("[KAFKA-PRODUCER] Sending async raw payload to topic={} key={}", topic, key);
+
+        return genericKafkaTemplate.send(topic, key, payload)
+                .thenApply(sendResult -> mapToSendResponse(sendResult, "SUCCESS_RAW"))
+                .exceptionally(ex -> {
+                    log.error("[KAFKA-PRODUCER] Failed to send raw message to topic={}: {}", topic, ex.getMessage());
+                    return new PublishResponse(topic, -1, -1, key, "FAILED: " + ex.getMessage(), Instant.now().toString());
+                });
+    }
+
+    /**
      * Publishes an {@link OrderEvent} to an exact target partition with custom distributed tracing headers.
      * <p>
      * Injects {@code X-Correlation-ID} and {@code X-Source-Service} headers into the {@link ProducerRecord}

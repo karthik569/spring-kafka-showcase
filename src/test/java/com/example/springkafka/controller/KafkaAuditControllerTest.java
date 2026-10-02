@@ -28,7 +28,12 @@ class KafkaAuditControllerTest {
                         return "RUNNING";
                     }
                 };
-        KafkaAuditController controller = new KafkaAuditController(consumerService, streamsService);
+        com.example.springkafka.avro.SchemaRegistryService schemaRegistryService =
+                new com.example.springkafka.avro.SchemaRegistryService();
+        com.example.springkafka.service.OutboxCdcService outboxService =
+                new com.example.springkafka.service.OutboxCdcService(null, new com.fasterxml.jackson.databind.ObjectMapper());
+
+        KafkaAuditController controller = new KafkaAuditController(consumerService, streamsService, schemaRegistryService, outboxService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

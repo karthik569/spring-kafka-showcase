@@ -165,6 +165,10 @@ The application runs on port `8080` and connects to Termux's local Apache Kafka 
 - **`DELETE /api/kafka/publish/inventory/tombstone/{skuCode}`**: Sends tombstone (`null` value) record to delete SKU key from compacted topic.
 - **`POST /api/kafka/publish/streams-order`**: Publishes orders to `streams.orders.input` for real-time Kafka Streams aggregation.
 - **`POST /api/kafka/publish/avro`**: Encodes domain `OrderEvent` into raw Apache Avro binary bytes conforming to `OrderAvroRecord` schema and publishes to `orders.avro`.
+- **`POST /api/kafka/publish/outbox-cdc`**: Commits order state change to local ACID outbox table and streams via CDC poller to `orders.outbox.cdc`.
+- **`POST /api/kafka/publish/encrypted`**: Client-side AES envelope encryption on sensitive PII customer fields before publishing to `orders.encrypted`.
+- **`POST /api/kafka/publish/joined-enrichment`**: Real-time KStream-KTable join correlating orders with warehouse inventory item metadata and publishing to `orders.joined.output`.
+- **`POST /api/kafka/publish/tiered-retention`**: Publishes orders to `orders.tiered.retention` configured with 7-day retention and 10MB segments for cold object storage offloading.
 
 #### [`KafkaAuditController.java`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaAuditController.java)
 - **`GET /api/kafka/audit/received`**: Returns list of all processed events with partitions and offsets.
@@ -175,36 +179,57 @@ The application runs on port `8080` and connects to Termux's local Apache Kafka 
 - **`GET /api/kafka/audit/streams/analytics`**: Returns all customer analytics computed by Kafka Streams topology.
 - **`GET /api/kafka/audit/streams/analytics/{customerId}`**: Interactive point query on Kafka Streams state store for a specific customer.
 - **`GET /api/kafka/audit/streams/analytics/windowed`**: Returns 1-minute tumbling window metrics.
+- **`GET /api/kafka/audit/streams/joined`**: Returns real-time joined stream enrichments (KStream - KTable).
 - **`GET /api/kafka/audit/avro`**: Returns deserialized Apache Avro records received from `orders.avro`.
 - **`GET /api/kafka/audit/avro/schema`**: Returns official JSON specification of the Apache Avro schema.
+- **`GET /api/kafka/audit/schema-registry/subjects`**: Returns all registered schemas and versions in Schema Registry simulator.
+- **`POST /api/kafka/audit/schema-registry/subjects/{subject}/versions`**: Registers new schema version with evolution compatibility check.
+- **`GET /api/kafka/audit/outbox-cdc`**: Returns all transactional outbox events dispatched to Kafka via CDC.
+- **`GET /api/kafka/audit/encrypted`**: Returns consumed encrypted records with customer PII decrypted by authorized consumers.
+- **`GET /api/kafka/audit/tiered`**: Returns records stored in long-term cold/tiered retention topic.
 - **`GET /api/kafka/audit/summary`**: Returns total counts and operational health summary across all pipelines.
 
 ---
 
 ### F. Enterprise Kafka Capabilities Added
 
-1. **Apache Avro Binary Serialization (`AvroSerializerService.java`)**:
-   - Canonical `OrderAvroRecord` schema.
-   - Low-footprint binary encoding via `BinaryEncoder` & `BinaryDecoder` (~40-60% payload size reduction vs JSON).
-   - Dedicated `ByteArrayDeserializer` container factory (`byteArrayContainerFactory`) and `ByteArraySerializer` Kafka template (`byteArrayKafkaTemplate`).
+1. **Transactional Outbox & CDC (`OutboxCdcService.java`, `OutboxRecord.java`)**:
+   - Solves dual-write inconsistency between local databases and Kafka brokers.
+   - Atomic state change + Outbox record persistence in the same local transaction.
+   - CDC poller streams committed records reliably to `orders.outbox.cdc`.
 
-2. **Custom Geographic Routing (`RegionAwarePartitioner.java`)**:
-   - `US-*` keys route directly to Partition 0.
-   - `EU-*` keys route directly to Partition 1.
-   - `APAC-*` keys route directly to Partition 2.
-   - Other keys route via standard Murmur2 hash modulo partitions.
+2. **KStream-KTable Real-Time Joins (`EnrichedOrderEvent.java`, `OrderStreamsService.java`)**:
+   - Joins fast-moving order streams with reference inventory state stores in memory.
+   - Generates enriched real-time operational views published to `orders.joined.output`.
 
-3. **Cooperative Sticky Rebalancing (`CooperativeStickyAssignor`)**:
-   - Replaces eager "stop-the-world" rebalance protocol. Only affected partitions migrate between consumer instances.
+3. **Schema Registry & Evolution (`SchemaRegistryService.java`)**:
+   - Centralized subject versioning (`orders.avro-value`).
+   - Compatibility validation (BACKWARD, FORWARD, FULL) preventing contract breakage.
+   - Schema ID and canonical JSON retrieval.
 
-4. **1-Minute Tumbling Window Stream Analytics (`OrderStreamsService.java`)**:
-   - Aggregates velocity, spend, and volume over fixed 1-minute non-overlapping time windows using Kafka Streams `TimeWindows.ofSizeWithNoGrace()`.
+4. **Client-Side Field-Level Encryption (`FieldEncryptionService.java`)**:
+   - AES-128 client-side envelope encryption for sensitive PII/GDPR fields (`customerId`).
+   - Brokers remain zero-knowledge intermediaries storing encrypted ciphertexts (`[ENC]...`).
+   - Consumers decrypt transparently upon ingestion.
+
+5. **Tiered Storage Architecture (KIP-405) (`orders.tiered.retention`)**:
+   - Topic configured with extended retention and customized segment roll intervals.
+   - Facilitates transparent historical offset playback and offloading to cold object stores (S3/GCS).
+
+6. **Apache Avro Binary Serialization (`AvroSerializerService.java`)**:
+   - Canonical `OrderAvroRecord` schema with compact binary encoding.
+
+7. **Custom Geographic Routing (`RegionAwarePartitioner.java`)**:
+   - Deterministic partition routing: `US-*` -> Partition 0, `EU-*` -> Partition 1, `APAC-*` -> Partition 2.
+
+8. **Cooperative Sticky Rebalancing (`CooperativeStickyAssignor`)**:
+   - Zero-downtime, non-stop partition reassignment without "stop-the-world" latency spikes.
 
 ---
 
 ### G. Interactive Architecture Diagrams (HTML)
 
-The project includes an interactive, browser-ready architectural visualizer:
+The project includes an interactive, browser-ready architectural visualizer with zoom/pan controls:
 - **File**: [`kafka-architecture-diagrams.html`](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/kafka-architecture-diagrams.html)
 - Contains rendered Mermaid.js diagrams for:
   1. Complete System Architecture Overview
@@ -216,4 +241,5 @@ The project includes an interactive, browser-ready architectural visualizer:
   7. Geographic Region-Aware Partitioner Flow
   8. Cooperative Sticky Assignor vs Eager Rebalancing
   9. Schema Registry, Avro & CDC Pipeline
+  10. Tiered Storage & MirrorMaker 2.0 Disaster Recovery
 

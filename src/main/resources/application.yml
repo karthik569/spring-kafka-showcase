@@ -40,6 +40,10 @@ app:
       compacted-inventory: "inventory.compacted"
       streams-input: "streams.orders.input"
       streams-output: "streams.analytics.output"
+      outbox-cdc: "orders.outbox.cdc"
+      joined-output: "orders.joined.output"
+      encrypted: "orders.encrypted"
+      tiered-retention: "orders.tiered.retention"
 
 management:
   endpoints:

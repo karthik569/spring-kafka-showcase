@@ -24,12 +24,21 @@ public class KafkaProducerController {
 
     private final KafkaProducerService producerService;
     private final com.example.springkafka.avro.AvroSerializerService avroSerializer;
+    private final com.example.springkafka.service.OutboxCdcService outboxService;
+    private final com.example.springkafka.security.FieldEncryptionService encryptionService;
+    private final com.example.springkafka.service.OrderStreamsService streamsService;
 
     public KafkaProducerController(
             KafkaProducerService producerService,
-            com.example.springkafka.avro.AvroSerializerService avroSerializer) {
+            com.example.springkafka.avro.AvroSerializerService avroSerializer,
+            com.example.springkafka.service.OutboxCdcService outboxService,
+            com.example.springkafka.security.FieldEncryptionService encryptionService,
+            com.example.springkafka.service.OrderStreamsService streamsService) {
         this.producerService = producerService;
         this.avroSerializer = avroSerializer;
+        this.outboxService = outboxService;
+        this.encryptionService = encryptionService;
+        this.streamsService = streamsService;
     }
 
     // 1. Simple Publish to Standard Topic
@@ -268,5 +277,75 @@ public class KafkaProducerController {
         byte[] avroBytes = avroSerializer.serializeToAvro(enriched);
         String key = (enriched.customerId() != null) ? enriched.customerId() : enriched.orderId();
         return producerService.sendAvroOrder("orders.avro", key, avroBytes);
+    }
+
+    // 13. Transactional Outbox Pattern & CDC Publish
+    @Operation(
+            summary = "Save order to Outbox table & dispatch via CDC",
+            description = "Commits an order state transition into a local ACID Outbox table and invokes the CDC poller to stream it to 'orders.outbox.cdc', ensuring zero dual-write loss."
+    )
+    @PostMapping("/outbox-cdc")
+    public ResponseEntity<com.example.springkafka.dto.OutboxRecord> publishOutboxCdc(
+            @RequestBody OrderEvent event) {
+        com.example.springkafka.dto.OutboxRecord record = outboxService.saveToOutbox(
+                "ORDER",
+                event.orderId(),
+                "ORDER_CREATED",
+                "orders.outbox.cdc",
+                event.withTimestamp()
+        );
+        outboxService.dispatchPendingOutboxRecords();
+        return ResponseEntity.ok(record);
+    }
+
+    // 14. Client-Side Field-Level Encryption (PII/GDPR)
+    @Operation(
+            summary = "Publish order with AES encrypted customer PII",
+            description = "Applies client-side envelope encryption to sensitive fields (customerId) using AES-128 before publishing to 'orders.encrypted'. Kafka broker receives zero-knowledge ciphertext."
+    )
+    @PostMapping("/encrypted")
+    public CompletableFuture<PublishResponse> publishEncrypted(
+            @RequestBody OrderEvent event) {
+        String encryptedCustomerId = encryptionService.encryptField(event.customerId());
+        OrderEvent secureEvent = new OrderEvent(
+                event.orderId(),
+                encryptedCustomerId,
+                event.skuCode(),
+                event.quantity(),
+                event.price(),
+                event.priority(),
+                event.simulateFailure(),
+                java.time.Instant.now().toString()
+        );
+        return producerService.sendAsync("orders.encrypted", event.orderId(), secureEvent);
+    }
+
+    // 15. Real-Time Stream Join Simulation (KStream - KTable Enrichment)
+    @Operation(
+            summary = "Publish joined order enrichment event",
+            description = "Correlates order event with inventory item metadata and publishes enriched event directly to 'orders.joined.output'."
+    )
+    @PostMapping("/joined-enrichment")
+    public CompletableFuture<PublishResponse> publishJoinedEnrichment(
+            @RequestBody OrderEvent event,
+            @RequestParam(defaultValue = "Ultrabook Pro 16") String itemName,
+            @RequestParam(defaultValue = "WH-US-EAST-1") String warehouseCode) {
+        com.example.springkafka.dto.InventoryItem item = new com.example.springkafka.dto.InventoryItem(
+                event.skuCode(), itemName, 100, warehouseCode, "ACTIVE", java.time.Instant.now().toString()
+        );
+        com.example.springkafka.dto.EnrichedOrderEvent enriched = com.example.springkafka.dto.EnrichedOrderEvent.of(event.withTimestamp(), item);
+        streamsService.recordJoinedEnrichment(enriched);
+        return producerService.sendAsyncRaw("orders.joined.output", event.orderId(), enriched);
+    }
+
+    // 16. Long-Term Cold / Tiered Retention Topic Publish
+    @Operation(
+            summary = "Publish order to long-term tiered retention topic",
+            description = "Publishes orders to 'orders.tiered.retention' configured with extended retention and customized segment size for tiered offloading."
+    )
+    @PostMapping("/tiered-retention")
+    public CompletableFuture<PublishResponse> publishTieredRetention(
+            @RequestBody OrderEvent event) {
+        return producerService.sendAsync("orders.tiered.retention", event.orderId(), event.withTimestamp());
     }
 }
