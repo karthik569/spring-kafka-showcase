@@ -168,16 +168,109 @@
             font-size: 1.05rem;
         }
 
-        .mermaid-container {
+        
+        /* Canvas Zoom & Pan Viewport */
+        .diagram-viewport {
+            position: relative;
             background: #090d16;
             border: 1px solid #243044;
             border-radius: 8px;
-            padding: 2rem 1rem;
-            display: flex;
-            justify-content: center;
-            overflow-x: auto;
+            overflow: hidden;
             margin-bottom: 1.5rem;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
         }
+
+        .zoom-toolbar {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 4px 8px;
+            z-index: 25;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .zoom-btn {
+            background: #1e293b;
+            color: #f1f5f9;
+            border: 1px solid #475569;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .zoom-btn:hover {
+            background: #38bdf8;
+            color: #0f172a;
+            border-color: #38bdf8;
+        }
+
+        .zoom-btn:active {
+            transform: scale(0.92);
+        }
+
+        .zoom-level-text {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-width: 48px;
+            text-align: center;
+            font-family: monospace;
+        }
+
+        .canvas-container {
+            width: 100%;
+            height: 520px;
+            overflow: hidden;
+            cursor: grab;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .canvas-container:active {
+            cursor: grabbing;
+        }
+
+        .diagram-content {
+            transform-origin: center center;
+            transition: transform 0.05s ease-out;
+            display: inline-block;
+            user-select: none;
+            width: 100%;
+            text-align: center;
+        }
+
+        .diagram-content svg {
+            max-width: none !important;
+            height: auto !important;
+        }
+
+        .hint-text {
+            position: absolute;
+            bottom: 8px;
+            left: 12px;
+            color: #64748b;
+            font-size: 0.75rem;
+            pointer-events: none;
+            z-index: 10;
+        }
+
 
         .key-takeaways {
             background: rgba(15, 23, 42, 0.6);
@@ -252,8 +345,16 @@
         <p class="section-description">
             The Spring Boot application orchestrates multiple specialized publishing, consuming, and streaming pipelines interconnected through a high-performance Apache Kafka KRaft broker cluster.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 flowchart TB
     subgraph REST_API ["REST API Layer (Swagger UI / OpenAPI)"]
         P1["POST /api/kafka/publish/simple"]
@@ -308,6 +409,9 @@ flowchart TB
 
     C1 & C2 & C3 & C4 & ST1 -.->|Inspect Metrics & Audits| Audit
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Key Architectural Highlights:</h4>
@@ -331,8 +435,16 @@ flowchart TB
             Traditional blocking retries sleep the consumer thread, stalling processing for all subsequent healthy messages on the same partition (Head-of-Line Blocking).
             Spring Kafka's <code>@RetryableTopic</code> reroutes failed messages to separate retry topics with backoff delays, allowing subsequent messages to proceed immediately.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 sequenceDiagram
     autonumber
     actor Client
@@ -360,6 +472,9 @@ sequenceDiagram
     DLT->>Consumer: handleNonblockingDlt()
     Note over Consumer: Recorded in nonblockingRecords<br/>status: DLT_EXHAUSTED
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Advantages of Non-Blocking Retries:</h4>
@@ -383,8 +498,16 @@ sequenceDiagram
             Provides fine-grained programmatic control over consumer offsets. When processing succeeds, <code>acknowledgment.acknowledge()</code> commits the offset immediately to Kafka.
             When transient downstream errors occur, <code>acknowledgment.nack(Duration.ofMillis(1000))</code> pauses polling and initiates controlled redelivery without losing position.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 flowchart TD
     Start([Message Arrives from orders.manual-ack]) --> Ingest[Consumer receives ConsumerRecord & Acknowledgment]
     Ingest --> Check{Simulate Failure or Downstream Error?}
@@ -403,6 +526,9 @@ flowchart TD
     style Nack fill:#ef4444,stroke:#dc2626,color:#fff
     style CommitBroker fill:#38bdf8,stroke:#0284c7,color:#0f172a
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Manual Acknowledgment Capabilities:</h4>
@@ -426,8 +552,16 @@ flowchart TD
             Continuous event stream processing topology consuming incoming order records from <code>streams.orders.input</code>, re-partitioning by <code>customerId</code>,
             and maintaining a running aggregate of cumulative order count, total spend, and average spend inside a materialized in-memory key-value store.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 flowchart LR
     subgraph INGESTION ["1. Ingestion"]
         InputTopic[("streams.orders.input")]
@@ -456,6 +590,9 @@ flowchart LR
     style OutTopic fill:#10b981,stroke:#059669,color:#fff
     style MatStore fill:#a855f7,stroke:#9333ea,color:#fff
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Kafka Streams Architecture Benefits:</h4>
@@ -479,8 +616,16 @@ flowchart LR
             Log compaction ensures that Kafka retains at least the last known value for each record key within the partition log.
             Sending a record with a non-null key and a <code>null</code> value creates a <strong>tombstone record</strong>, instructing Kafka's log cleaner to delete the key permanently.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 flowchart TB
     subgraph LOG_BEFORE ["Partition Log (Before Compaction)"]
         O0["Offset 0: K='SKU-LAPTOP', V='Stock: 100'"]
@@ -507,6 +652,9 @@ flowchart TB
     style AO4 fill:#ef4444,stroke:#dc2626,color:#fff
     style AO5 fill:#10b981,stroke:#059669,color:#fff
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Log Compaction Properties & Rules:</h4>
@@ -529,8 +677,16 @@ flowchart TB
         <p class="section-description">
             Atomic multi-message and multi-partition publishing using Kafka's transaction coordinator. Read-committed consumers will never observe partial or aborted batches.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 sequenceDiagram
     autonumber
     participant App as Spring Boot Service
@@ -560,6 +716,9 @@ sequenceDiagram
         Note over Consumer: Records skipped & ignored!<br/>Zero dirty reads
     end
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Transactional Guarantees:</h4>
@@ -582,8 +741,16 @@ sequenceDiagram
         <p class="section-description">
             Bypasses default Murmur2 hashing to enforce business-aware routing across Kafka partitions based on key prefixes, ensuring regional data locality and partition-level isolation.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 flowchart LR
     subgraph INCOMING ["Incoming ProducerRecords"]
         R1["Key: 'US-CUST-101'\n(North America)"]
@@ -616,6 +783,9 @@ flowchart LR
     style P1 fill:#10b981,stroke:#059669,color:#fff
     style P2 fill:#f59e0b,stroke:#d97706,color:#0f172a
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Custom Partitioner Mechanics:</h4>
@@ -639,8 +809,16 @@ flowchart LR
             Traditional Eager rebalancing stops the world across all consumers in the group during membership changes.
             The <code>CooperativeStickyAssignor</code> performs incremental assignment: only partitions being migrated are revoked, allowing unaffected consumers to continue consuming without interruption.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 sequenceDiagram
     autonumber
     participant Broker as Kafka Group Coordinator
@@ -662,6 +840,9 @@ sequenceDiagram
     Note over C3: Consumer 3 begins reading P1 immediately
     Note over C1,C3: Final State: C1->P0, C2->P2, C3->P1
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Cooperative Rebalance Highlights:</h4>
@@ -684,8 +865,16 @@ sequenceDiagram
         <p class="section-description">
             Enterprise event architectures decouple producers and consumers through centralized schema governance (Avro / Protobuf) and database log change capture (Debezium CDC), completely eliminating dual-write inconsistencies.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 flowchart LR
     subgraph APP_DB ["Transactional Outbox (Postgres / MariaDB)"]
         App["Spring Boot Service"] -->|1. Atomic Local Transaction| DB[("Database\n(Business Tables + outbox_events)")]
@@ -723,6 +912,9 @@ flowchart LR
     style Registry fill:#a855f7,stroke:#9333ea,color:#fff
     style Topic fill:#f59e0b,stroke:#d97706,color:#0f172a
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>CDC & Schema Registry Advantages:</h4>
@@ -746,8 +938,16 @@ flowchart LR
             Tiered Storage offloads aged log segments to cloud object storage (S3 / GCS) while keeping hot segments on local NVMe SSDs.
             MirrorMaker 2.0 replicates topic topologies, partition offsets, and ACLs across geo-distributed primary and secondary clusters.
         </p>
-        <div class="mermaid-container">
-            <div class="mermaid">
+        <div class="diagram-viewport">
+            <div class="zoom-toolbar">
+                <button class="zoom-btn btn-zoom-in" title="Zoom In (+)">+</button>
+                <button class="zoom-btn btn-zoom-out" title="Zoom Out (-)">−</button>
+                <button class="zoom-btn btn-zoom-reset" title="Reset Zoom">⟲</button>
+                <span class="zoom-level-text">100%</span>
+            </div>
+            <div class="canvas-container">
+                <div class="diagram-content">
+                    <div class="mermaid">
 flowchart TB
     subgraph PRIMARY_CLUSTER ["Primary Data Center (Active Region US-East)"]
         P_Broker["Kafka KRaft Broker"]
@@ -777,6 +977,9 @@ flowchart TB
     style MM2 fill:#10b981,stroke:#059669,color:#fff
     style DR_SSD fill:#f59e0b,stroke:#d97706,color:#0f172a
             </div>
+                </div>
+            </div>
+            <div class="hint-text">💡 Drag to Pan • Mouse Wheel or +/− to Zoom</div>
         </div>
         <div class="key-takeaways">
             <h4>Tiered Storage & MirrorMaker 2.0 Benefits:</h4>
@@ -794,9 +997,8 @@ flowchart TB
 </div>
 
 <script>
-    // Initialize Mermaid with dark theme
     mermaid.initialize({
-        startOnLoad: true,
+        startOnLoad: false,
         theme: 'dark',
         themeVariables: {
             darkMode: true,
@@ -811,18 +1013,143 @@ flowchart TB
         securityLevel: 'loose'
     });
 
-    function switchTab(sectionId) {
-        // Update tab buttons
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
+    function setupZoomAndPan(viewport) {
+        if (viewport.dataset.zoomInitialized) return;
+        viewport.dataset.zoomInitialized = "true";
 
-        // Update sections
+        const canvas = viewport.querySelector('.canvas-container');
+        const content = viewport.querySelector('.diagram-content');
+        const btnIn = viewport.querySelector('.btn-zoom-in');
+        const btnOut = viewport.querySelector('.btn-zoom-out');
+        const btnReset = viewport.querySelector('.btn-zoom-reset');
+        const label = viewport.querySelector('.zoom-level-text');
+
+        let scale = 1.0;
+        let translateX = 0;
+        let translateY = 0;
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        function updateTransform() {
+            content.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
+            if (label) {
+                label.textContent = Math.round(scale * 100) + '%';
+            }
+        }
+
+        if (btnIn) {
+            btnIn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                scale = Math.min(scale + 0.2, 4.0);
+                updateTransform();
+            });
+        }
+
+        if (btnOut) {
+            btnOut.addEventListener('click', (e) => {
+                e.stopPropagation();
+                scale = Math.max(scale - 0.2, 0.3);
+                updateTransform();
+            });
+        }
+
+        if (btnReset) {
+            btnReset.addEventListener('click', (e) => {
+                e.stopPropagation();
+                scale = 1.0;
+                translateX = 0;
+                translateY = 0;
+                updateTransform();
+            });
+        }
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 0.12 : -0.12;
+            scale = Math.min(Math.max(scale + delta, 0.3), 4.0);
+            updateTransform();
+        }, { passive: false });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.zoom-toolbar')) return;
+            isDragging = true;
+            startX = e.clientX - translateX;
+            startY = e.clientY - translateY;
+            canvas.style.cursor = 'grabbing';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            translateX = e.clientX - startX;
+            translateY = e.clientY - startY;
+            updateTransform();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                canvas.style.cursor = 'grab';
+            }
+        });
+
+        // Touch drag
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                lastTouchX = e.touches[0].clientX - translateX;
+                lastTouchY = e.touches[0].clientY - translateY;
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (isDragging && e.touches.length === 1) {
+                translateX = e.touches[0].clientX - lastTouchX;
+                translateY = e.touches[0].clientY - lastTouchY;
+                updateTransform();
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+    }
+
+    async function renderMermaidInActiveSection(section) {
+        if (!section) return;
+        const unrendered = section.querySelectorAll('.mermaid:not([data-processed="true"])');
+        if (unrendered.length > 0) {
+            try {
+                await mermaid.run({ nodes: unrendered });
+            } catch (err) {
+                console.error('Mermaid render error:', err);
+            }
+        }
+        section.querySelectorAll('.diagram-viewport').forEach(setupZoomAndPan);
+    }
+
+    async function switchTab(sectionId) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        if (window.event && window.event.target) {
+            window.event.target.classList.add('active');
+        }
+
         document.querySelectorAll('.diagram-section').forEach(sec => sec.classList.remove('active'));
         const target = document.getElementById(sectionId);
         if (target) {
             target.classList.add('active');
+            await renderMermaidInActiveSection(target);
         }
     }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+        const initialActive = document.querySelector('.diagram-section.active');
+        if (initialActive) {
+            await renderMermaidInActiveSection(initialActive);
+        }
+    });
 </script>
 
 </body>
