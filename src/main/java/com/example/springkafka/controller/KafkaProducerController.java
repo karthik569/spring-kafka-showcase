@@ -27,18 +27,24 @@ public class KafkaProducerController {
     private final com.example.springkafka.service.OutboxCdcService outboxService;
     private final com.example.springkafka.security.FieldEncryptionService encryptionService;
     private final com.example.springkafka.service.OrderStreamsService streamsService;
+    private final com.example.springkafka.service.EventSourcingService eventSourcingService;
+    private final com.example.springkafka.service.SagaOrchestratorService sagaService;
 
     public KafkaProducerController(
             KafkaProducerService producerService,
             com.example.springkafka.avro.AvroSerializerService avroSerializer,
             com.example.springkafka.service.OutboxCdcService outboxService,
             com.example.springkafka.security.FieldEncryptionService encryptionService,
-            com.example.springkafka.service.OrderStreamsService streamsService) {
+            com.example.springkafka.service.OrderStreamsService streamsService,
+            com.example.springkafka.service.EventSourcingService eventSourcingService,
+            com.example.springkafka.service.SagaOrchestratorService sagaService) {
         this.producerService = producerService;
         this.avroSerializer = avroSerializer;
         this.outboxService = outboxService;
         this.encryptionService = encryptionService;
         this.streamsService = streamsService;
+        this.eventSourcingService = eventSourcingService;
+        this.sagaService = sagaService;
     }
 
     // 1. Simple Publish to Standard Topic
@@ -347,5 +353,32 @@ public class KafkaProducerController {
     public CompletableFuture<PublishResponse> publishTieredRetention(
             @RequestBody OrderEvent event) {
         return producerService.sendAsync("orders.tiered.retention", event.orderId(), event.withTimestamp());
+    }
+
+    // 17. Event Sourcing Command Append
+    @Operation(
+            summary = "Append domain event to Event Store (Event Sourcing)",
+            description = "Appends an immutable domain event (e.g. ORDER_CREATED, PAYMENT_RESERVED) to aggregate stream and broadcasts to 'events.sourced'."
+    )
+    @PostMapping("/event-sourced/{aggregateId}")
+    public ResponseEntity<com.example.springkafka.dto.DomainEvent> publishEventSourced(
+            @PathVariable String aggregateId,
+            @RequestParam(defaultValue = "ORDER_CREATED") String eventType,
+            @RequestBody OrderEvent payload) {
+        com.example.springkafka.dto.DomainEvent event = eventSourcingService.appendEvent("ORDER", aggregateId, eventType, payload);
+        return ResponseEntity.ok(event);
+    }
+
+    // 18. Distributed Saga Checkout Orchestration
+    @Operation(
+            summary = "Execute distributed Saga checkout transaction",
+            description = "Orchestrates multi-service transaction across Order, Payment, and Inventory topics. Set forcePaymentFail=true to trigger automatic compensating rollback."
+    )
+    @PostMapping("/saga/checkout")
+    public ResponseEntity<com.example.springkafka.dto.SagaInstance> executeSagaCheckout(
+            @RequestBody OrderEvent event,
+            @RequestParam(defaultValue = "false") boolean forcePaymentFail) {
+        com.example.springkafka.dto.SagaInstance saga = sagaService.startOrderSaga(event.withTimestamp(), forcePaymentFail);
+        return ResponseEntity.ok(saga);
     }
 }

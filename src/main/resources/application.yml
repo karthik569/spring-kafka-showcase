@@ -44,6 +44,10 @@ app:
       joined-output: "orders.joined.output"
       encrypted: "orders.encrypted"
       tiered-retention: "orders.tiered.retention"
+      events-sourced: "events.sourced"
+      saga-orders-commands: "saga.orders.commands"
+      saga-inventory-commands: "saga.inventory.commands"
+      saga-completed: "saga.events.completed"
 
 management:
   endpoints:

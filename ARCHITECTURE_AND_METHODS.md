@@ -227,7 +227,43 @@ The application runs on port `8080` and connects to Termux's local Apache Kafka 
 
 ---
 
-### G. Interactive Architecture Diagrams (HTML)
+### H. Enterprise Kafka Patterns: Event Sourcing, Distributed Sagas, Idempotency & DLT Re-Drive
+
+1. **Event Sourcing & CQRS (`EventSourcingService.java`, `DomainEvent.java`)**:
+   - **Immutable Event Stream**: State changes are written sequentially to the append-only topic `events.sourced`.
+   - **CQRS Projections**: Commands update read models asynchronously while queries read materialized views without locking write models.
+   - **State Rehydration**: Allows complete reconstruction ("time travel") of any aggregate's current state by replaying all historical domain events from offset 0 / version 1.
+   - **Endpoints**:
+     - `POST /api/kafka/publish/event-sourced/{aggregateId}`
+     - `GET /api/kafka/audit/event-sourced/{aggregateId}/events`
+     - `GET /api/kafka/audit/event-sourced/{aggregateId}/rehydrate`
+
+2. **Distributed Saga Orchestrator (`SagaOrchestratorService.java`, `SagaInstance.java`)**:
+   - **Orchestration Workflow**: Manages long-lived distributed transactions spanning microservice boundaries (Order Placed -> Payment Authorized -> Warehouse Inventory Reserved).
+   - **Automated Compensating Transactions**: If any downstream step fails (e.g. `forcePaymentFail=true`), the orchestrator dispatches compensating commands to rollback preceding steps (e.g. order cancellation, inventory reservation release), restoring data consistency across services.
+   - **Audit Trail**: Every executed step and compensating action is immutably timestamped in the Saga instance history.
+   - **Endpoints**:
+     - `POST /api/kafka/publish/saga/checkout`
+     - `GET /api/kafka/audit/saga/instances`
+
+3. **Idempotent Consumer & Sliding-Window Deduplication (`IdempotentDeduplicationService.java`)**:
+   - **Duplicate Interception**: Intercepts duplicate messages caused by consumer restarts, network timeouts, or at-least-once retries using an in-memory sliding window cache.
+   - **Keyed Evaluation**: Compares unique idempotency keys (e.g. `orderId` or custom headers). First-time deliveries are processed; duplicates are safely suppressed without executing redundant business logic.
+   - **Auditing**: Records both successful first-time keys and suppressed duplicate attempts.
+   - **Endpoint**:
+     - `GET /api/kafka/audit/dedup/attempts`
+
+4. **Dead Letter Topic (DLT) Management & Administrative Re-Drive (`DeadLetterRedriveService.java`)**:
+   - **Poison Message Recovery**: Inspects poisoned messages that have exhausted their retry budget in `orders.retryable.DLT`.
+   - **Re-drive Replay**: Allows platform operators to re-dispatch dead-letter records to a destination topic (e.g. `orders.standard`), with options to strip transient failure simulation flags or correct payloads.
+   - **Re-drive Audit**: Records complete audit history of all administrative redrive operations with unique `redriveId` correlation tags.
+   - **Endpoints**:
+     - `POST /api/kafka/audit/dlt/redrive/{orderId}`
+     - `GET /api/kafka/audit/dlt/redrive/history`
+
+---
+
+### I. Interactive Architecture Diagrams (HTML)
 
 The project includes an interactive, browser-ready architectural visualizer with zoom/pan controls:
 - **File**: [`kafka-architecture-diagrams.html`](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/kafka-architecture-diagrams.html)

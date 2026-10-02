@@ -196,6 +196,59 @@ curl http://localhost:8080/api/kafka/audit/dlt
 
 # Summary counts
 curl http://localhost:8080/api/kafka/audit/summary
+---
+
+### 6. Enterprise Patterns: Event Sourcing, Distributed Sagas, Idempotency & DLT Re-drive
+
+#### A) Event Sourcing & CQRS Rehydration
+```bash
+# 1. Append state transition events to aggregate
+curl -X POST "http://localhost:8080/api/kafka/publish/event-sourced/ORD-100?eventType=ORDER_CREATED" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"ORD-100","customerId":"CUST-10","skuCode":"IPHONE-16","quantity":1,"price":999.0,"priority":"HIGH","simulateFailure":false}'
+
+curl -X POST "http://localhost:8080/api/kafka/publish/event-sourced/ORD-100?eventType=PAYMENT_RESERVED" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"ORD-100","customerId":"CUST-10","skuCode":"IPHONE-16","quantity":1,"price":999.0,"priority":"HIGH","simulateFailure":false}'
+
+# 2. Rehydrate aggregate state by replaying event stream
+curl http://localhost:8080/api/kafka/audit/event-sourced/ORD-100/rehydrate
+curl http://localhost:8080/api/kafka/audit/event-sourced/ORD-100/events
+```
+
+#### B) Distributed Saga Orchestration (Checkout Workflow)
+```bash
+# Normal successful 3-step Saga (Order -> Payment -> Inventory)
+curl -X POST "http://localhost:8080/api/kafka/publish/saga/checkout" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"ORD-SAGA-OK","customerId":"VIP-1","skuCode":"MACBOOK-PRO","quantity":1,"price":2199.0,"priority":"HIGH","simulateFailure":false}'
+
+# Failing Saga with automated compensating transaction rollback
+curl -X POST "http://localhost:8080/api/kafka/publish/saga/checkout?forcePaymentFail=true" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"ORD-SAGA-ROLLBACK","customerId":"VIP-2","skuCode":"MACBOOK-AIR","quantity":1,"price":1199.0,"priority":"HIGH","simulateFailure":false}'
+
+# Inspect all Saga instances and step execution history
+curl http://localhost:8080/api/kafka/audit/saga/instances
+```
+
+#### C) Idempotent Consumer & Deduplication Sliding Window Cache
+```bash
+# Publish twice with identical orderId: second delivery is intercepted and suppressed
+curl -X POST "http://localhost:8080/api/kafka/publish/simple" -H "Content-Type: application/json" \
+  -d '{"orderId":"ORD-DEDUP-TEST","customerId":"CUST-1","skuCode":"ITEM-1","quantity":1,"price":25.0,"priority":"NORMAL","simulateFailure":false}'
+
+# Inspect deduplication sliding window cache and suppressed attempts
+curl http://localhost:8080/api/kafka/audit/dedup/attempts
+```
+
+#### D) Dead Letter Topic (DLT) Administrative Re-drive
+```bash
+# Re-dispatch failed poison message from DLT to orders.standard with failure flag cleared
+curl -X POST "http://localhost:8080/api/kafka/audit/dlt/redrive/ORD-FAIL-1?clearFailureFlag=true"
+
+# View audit history of all executed re-drives
+curl http://localhost:8080/api/kafka/audit/dlt/redrive/history
 ```
 
 ---

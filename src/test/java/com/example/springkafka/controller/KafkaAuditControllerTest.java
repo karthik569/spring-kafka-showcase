@@ -32,8 +32,25 @@ class KafkaAuditControllerTest {
                 new com.example.springkafka.avro.SchemaRegistryService();
         com.example.springkafka.service.OutboxCdcService outboxService =
                 new com.example.springkafka.service.OutboxCdcService(null, new com.fasterxml.jackson.databind.ObjectMapper());
+        com.example.springkafka.service.EventSourcingService eventSourcingService =
+                new com.example.springkafka.service.EventSourcingService(null, new com.fasterxml.jackson.databind.ObjectMapper());
+        com.example.springkafka.service.SagaOrchestratorService sagaService =
+                new com.example.springkafka.service.SagaOrchestratorService(null);
+        com.example.springkafka.service.IdempotentDeduplicationService dedupService =
+                new com.example.springkafka.service.IdempotentDeduplicationService();
+        com.example.springkafka.service.DeadLetterRedriveService redriveService =
+                new com.example.springkafka.service.DeadLetterRedriveService(null, consumerService);
 
-        KafkaAuditController controller = new KafkaAuditController(consumerService, streamsService, schemaRegistryService, outboxService);
+        KafkaAuditController controller = new KafkaAuditController(
+                consumerService,
+                streamsService,
+                schemaRegistryService,
+                outboxService,
+                eventSourcingService,
+                sagaService,
+                dedupService,
+                redriveService
+        );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

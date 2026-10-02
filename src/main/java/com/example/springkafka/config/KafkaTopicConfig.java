@@ -141,4 +141,36 @@ public class KafkaTopicConfig {
                 .config(org.apache.kafka.common.config.TopicConfig.SEGMENT_BYTES_CONFIG, "10485760") // 10MB segments
                 .build();
     }
+
+    @Bean
+    public NewTopic eventSourcedTopic() {
+        return TopicBuilder.name("events.sourced")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic sagaOrdersCommandsTopic() {
+        return TopicBuilder.name("saga.orders.commands")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic sagaInventoryCommandsTopic() {
+        return TopicBuilder.name("saga.inventory.commands")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic sagaCompletedTopic() {
+        return TopicBuilder.name("saga.events.completed")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
 }

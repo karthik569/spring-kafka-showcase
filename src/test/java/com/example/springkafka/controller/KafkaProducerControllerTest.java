@@ -60,12 +60,19 @@ class KafkaProducerControllerTest {
                     public void startTopology() {}
                 };
 
+        com.example.springkafka.service.EventSourcingService eventSourcingService =
+                new com.example.springkafka.service.EventSourcingService(stubProducer, objectMapper);
+        com.example.springkafka.service.SagaOrchestratorService sagaService =
+                new com.example.springkafka.service.SagaOrchestratorService(stubProducer);
+
         KafkaProducerController controller = new KafkaProducerController(
                 stubProducer,
                 avroSerializer,
                 outboxService,
                 encryptionService,
-                streamsService
+                streamsService,
+                eventSourcingService,
+                sagaService
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

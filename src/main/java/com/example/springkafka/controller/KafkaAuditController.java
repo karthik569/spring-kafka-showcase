@@ -3,6 +3,7 @@ package com.example.springkafka.controller;
 import com.example.springkafka.dto.AuditRecord;
 import com.example.springkafka.dto.InventoryItem;
 import com.example.springkafka.dto.StreamAnalytics;
+import com.example.springkafka.service.IdempotentDeduplicationService;
 import com.example.springkafka.service.KafkaConsumerService;
 import com.example.springkafka.service.OrderStreamsService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,16 +33,28 @@ public class KafkaAuditController {
     private final OrderStreamsService streamsService;
     private final com.example.springkafka.avro.SchemaRegistryService schemaRegistryService;
     private final com.example.springkafka.service.OutboxCdcService outboxService;
+    private final com.example.springkafka.service.EventSourcingService eventSourcingService;
+    private final com.example.springkafka.service.SagaOrchestratorService sagaService;
+    private final com.example.springkafka.service.IdempotentDeduplicationService dedupService;
+    private final com.example.springkafka.service.DeadLetterRedriveService redriveService;
 
     public KafkaAuditController(
             KafkaConsumerService consumerService,
             OrderStreamsService streamsService,
             com.example.springkafka.avro.SchemaRegistryService schemaRegistryService,
-            com.example.springkafka.service.OutboxCdcService outboxService) {
+            com.example.springkafka.service.OutboxCdcService outboxService,
+            com.example.springkafka.service.EventSourcingService eventSourcingService,
+            com.example.springkafka.service.SagaOrchestratorService sagaService,
+            com.example.springkafka.service.IdempotentDeduplicationService dedupService,
+            com.example.springkafka.service.DeadLetterRedriveService redriveService) {
         this.consumerService = consumerService;
         this.streamsService = streamsService;
         this.schemaRegistryService = schemaRegistryService;
         this.outboxService = outboxService;
+        this.eventSourcingService = eventSourcingService;
+        this.sagaService = sagaService;
+        this.dedupService = dedupService;
+        this.redriveService = redriveService;
     }
 
     @Operation(
@@ -252,5 +266,71 @@ public class KafkaAuditController {
     @GetMapping("/tiered")
     public List<AuditRecord> getTieredAudit() {
         return consumerService.getTieredRecords();
+    }
+
+    @Operation(
+            summary = "Get immutable Event Store stream for an aggregate",
+            description = "Returns the sequence of domain events that record all historical state changes for the given aggregate."
+    )
+    @GetMapping("/event-sourced/{aggregateId}/events")
+    public List<com.example.springkafka.dto.DomainEvent> getAggregateEvents(@PathVariable String aggregateId) {
+        return eventSourcingService.getEventStream(aggregateId);
+    }
+
+    @Operation(
+            summary = "Rehydrate aggregate state from Event Store stream",
+            description = "Simulates CQRS state rehydration by replaying domain events from version 1."
+    )
+    @GetMapping("/event-sourced/{aggregateId}/rehydrate")
+    public Map<String, Object> rehydrateAggregate(@PathVariable String aggregateId) {
+        return eventSourcingService.rehydrateAggregate(aggregateId);
+    }
+
+    @Operation(
+            summary = "Get all distributed Saga instances and execution state",
+            description = "Returns current status, executed steps, and compensations for all active or completed Sagas."
+    )
+    @GetMapping("/saga/instances")
+    public List<com.example.springkafka.dto.SagaInstance> getAllSagas() {
+        return sagaService.getAllSagas();
+    }
+
+    @Operation(
+            summary = "Get idempotent consumer deduplication cache and suppressed duplicates",
+            description = "Inspects the deduplication sliding window cache and lists all duplicate messages that were safely intercepted."
+    )
+    @GetMapping("/dedup/attempts")
+    public Map<String, Object> getDedupStatus() {
+        IdempotentDeduplicationService activeDedup = (consumerService.getDedupService() != null)
+                ? consumerService.getDedupService()
+                : dedupService;
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("totalProcessedKeys", activeDedup.getAllProcessedKeys().size());
+        res.put("processedEntries", activeDedup.getAllProcessedKeys());
+        res.put("duplicateAttemptsSuppressed", activeDedup.getDuplicateAttempts());
+        return res;
+    }
+
+    @Operation(
+            summary = "Re-drive (replay) a failed message from Dead Letter Topic (DLT)",
+            description = "Administrative endpoint to recover a poisoned message from 'orders.retryable.DLT', optionally remove failure simulation flags, and re-dispatch to destination topic."
+    )
+    @org.springframework.web.bind.annotation.PostMapping("/dlt/redrive/{orderId}")
+    public ResponseEntity<Map<String, Object>> redriveDeadLetter(
+            @PathVariable String orderId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "orders.standard") String targetTopic,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "true") boolean clearFailureFlag) {
+        return redriveService.redriveDeadLetter(orderId, targetTopic, clearFailureFlag)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @Operation(
+            summary = "Get history of executed DLT re-drives",
+            description = "Returns audit history of all messages successfully re-dispatched from the Dead Letter Topic."
+    )
+    @GetMapping("/dlt/redrive/history")
+    public List<Map<String, Object>> getRedriveHistory() {
+        return redriveService.getRedriveHistory();
     }
 }

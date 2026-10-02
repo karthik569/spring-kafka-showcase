@@ -52,20 +52,27 @@ public class KafkaConsumerService {
     private final List<com.example.springkafka.dto.EnrichedOrderEvent> joinedRecords = new CopyOnWriteArrayList<>();
     private final List<AuditRecord> encryptedRecords = new CopyOnWriteArrayList<>();
     private final List<AuditRecord> tieredRecords = new CopyOnWriteArrayList<>();
+    private final List<AuditRecord> eventSourcedRecords = new CopyOnWriteArrayList<>();
+    private final List<AuditRecord> sagaCommandRecords = new CopyOnWriteArrayList<>();
 
     private final com.example.springkafka.avro.AvroSerializerService avroSerializer;
     private final com.example.springkafka.security.FieldEncryptionService encryptionService;
+    private final IdempotentDeduplicationService dedupService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public KafkaConsumerService(
             com.example.springkafka.avro.AvroSerializerService avroSerializer,
-            com.example.springkafka.security.FieldEncryptionService encryptionService) {
+            com.example.springkafka.security.FieldEncryptionService encryptionService,
+            IdempotentDeduplicationService dedupService) {
         this.avroSerializer = avroSerializer;
         this.encryptionService = encryptionService;
+        this.dedupService = dedupService;
     }
 
     public KafkaConsumerService() {
         this.avroSerializer = new com.example.springkafka.avro.AvroSerializerService();
         this.encryptionService = new com.example.springkafka.security.FieldEncryptionService();
+        this.dedupService = new IdempotentDeduplicationService();
     }
 
     /**
@@ -87,6 +94,12 @@ public class KafkaConsumerService {
             @Header(KafkaHeaders.OFFSET) long offset,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
             @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
+
+        boolean isFirstTime = dedupService.checkAndSet(event.orderId(), topic + ":" + offset);
+        if (!isFirstTime) {
+            log.warn("[KAFKA-CONSUMER-STANDARD] Suppressed duplicate delivery for orderId={}", event.orderId());
+            return;
+        }
 
         log.info("[KAFKA-CONSUMER-STANDARD] Consumed orderId={} from topic={} partition={} offset={}",
                 event.orderId(), topic, partition, offset);
@@ -464,5 +477,69 @@ public class KafkaConsumerService {
 
     public List<AuditRecord> getTieredRecords() {
         return tieredRecords;
+    }
+
+    public List<AuditRecord> getDeadLetterRecords() {
+        return dltRecords;
+    }
+
+    /**
+     * Consumes domain events from the append-only Event Store topic.
+     */
+    @KafkaListener(topics = "events.sourced", groupId = "event-sourcing-projection-group")
+    public void consumeEventSourced(
+            ConsumerRecord<String, Object> record,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset) {
+
+        log.info("[KAFKA-CONSUMER-EVENT-SOURCING] Ingested domain event aggregateId={} offset={}", record.key(), offset);
+        eventSourcedRecords.add(new AuditRecord(
+                topic,
+                partition,
+                offset,
+                record.key(),
+                new OrderEvent(record.key(), "EVENT-CUST", "EVENT-ITEM", 1, 0.0, "NORMAL", false, java.time.Instant.now().toString()),
+                "event-sourcing-projection-group",
+                java.time.Instant.now().toString(),
+                "EVENT_SOURCED: " + record.value()
+        ));
+    }
+
+    /**
+     * Consumes Saga orchestration command messages.
+     */
+    @KafkaListener(topics = {"saga.orders.commands", "saga.inventory.commands", "saga.events.completed"}, groupId = "saga-participants-group")
+    public void consumeSagaCommands(
+            ConsumerRecord<String, String> record,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset) {
+
+        log.info("[KAFKA-CONSUMER-SAGA] Ingested saga message on topic={} sagaId={} command={}",
+                topic, record.key(), record.value());
+
+        sagaCommandRecords.add(new AuditRecord(
+                topic,
+                partition,
+                offset,
+                record.key(),
+                new OrderEvent(record.key(), "SAGA-CUST", "SAGA-ITEM", 1, 0.0, "NORMAL", false, java.time.Instant.now().toString()),
+                "saga-participants-group",
+                java.time.Instant.now().toString(),
+                "SAGA_CMD: " + record.value()
+        ));
+    }
+
+    public List<AuditRecord> getEventSourcedRecords() {
+        return eventSourcedRecords;
+    }
+
+    public List<AuditRecord> getSagaCommandRecords() {
+        return sagaCommandRecords;
+    }
+
+    public IdempotentDeduplicationService getDedupService() {
+        return dedupService;
     }
 }
