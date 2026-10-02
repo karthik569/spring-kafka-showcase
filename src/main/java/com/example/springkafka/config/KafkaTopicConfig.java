@@ -173,4 +173,36 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    @Bean
+    public NewTopic streamsShipmentsTopic() {
+        return TopicBuilder.name("streams.shipments.input")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic streamsOrdersShipmentsJoinedTopic() {
+        return TopicBuilder.name("streams.orders-shipments.joined")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic userSessionsInputTopic() {
+        return TopicBuilder.name("user.sessions.input")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic ordersCdcRawTopic() {
+        return TopicBuilder.name("orders.cdc.raw")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
 }

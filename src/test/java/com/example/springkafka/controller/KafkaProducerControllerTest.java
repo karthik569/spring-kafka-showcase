@@ -65,6 +65,9 @@ class KafkaProducerControllerTest {
         com.example.springkafka.service.SagaOrchestratorService sagaService =
                 new com.example.springkafka.service.SagaOrchestratorService(stubProducer);
 
+        com.example.springkafka.service.KafkaConnectSimulatorService connectSimulator =
+                new com.example.springkafka.service.KafkaConnectSimulatorService(stubProducer, objectMapper);
+
         KafkaProducerController controller = new KafkaProducerController(
                 stubProducer,
                 avroSerializer,
@@ -72,7 +75,8 @@ class KafkaProducerControllerTest {
                 encryptionService,
                 streamsService,
                 eventSourcingService,
-                sagaService
+                sagaService,
+                connectSimulator
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

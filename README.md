@@ -251,6 +251,48 @@ curl -X POST "http://localhost:8080/api/kafka/audit/dlt/redrive/ORD-FAIL-1?clear
 curl http://localhost:8080/api/kafka/audit/dlt/redrive/history
 ```
 
+#### E) KStream-KStream Sliding-Window Correlation
+```bash
+# Publish shipment event to correlate with an existing order within a 5-minute sliding window
+curl -X POST "http://localhost:8080/api/kafka/publish/shipment" \
+  -H "Content-Type: application/json" \
+  -d '{"shipmentId":"SHIP-991","orderId":"ORD-TRACE-101","trackingNumber":"TRK-FEDEX-5544","carrier":"FEDEX","estimatedDelivery":"2026-10-06T12:00:00Z","status":"DISPATCHED","timestamp":"2026-10-02T11:13:30Z"}'
+
+# Query correlated orders and shipments
+curl http://localhost:8080/api/kafka/audit/streams/joined-shipments
+```
+
+#### F) Kafka Streams Session Windows (Inactivity Gaps)
+```bash
+# Publish multiple interactions for a user within an active session
+curl -X POST "http://localhost:8080/api/kafka/publish/user-session" \
+  -H "Content-Type: application/json" \
+  -d '{"sessionId":"SESS-1","userId":"USER-ALICE","action":"VIEW_CATALOG","pageUrl":"/store/phones","timestamp":"2026-10-02T11:13:00Z"}'
+
+# Retrieve aggregated session window summary
+curl http://localhost:8080/api/kafka/audit/streams/sessions/USER-ALICE
+curl http://localhost:8080/api/kafka/audit/streams/sessions
+```
+
+#### G) W3C Distributed Tracing & Lineage (OpenTelemetry-compatible)
+```bash
+# View complete transaction trace graphs with parent-child span hops
+curl http://localhost:8080/api/kafka/audit/tracing/all
+curl http://localhost:8080/api/kafka/audit/tracing/lineage/{traceId}
+```
+
+#### H) Debezium CDC Pipeline & S3 Lake Sink
+```bash
+# Simulate database row mutation with automated PII masking SMTs and S3 Lake batching
+curl -X POST "http://localhost:8080/api/kafka/publish/connect/cdc-table?table=orders&op=INSERT" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"ORD-CDC-999","customerId":"CUST-CDC","creditCardNumber":"4111222233334444","email":"alice@enterprise.com","total":1499.0}'
+
+# Inspect SMT transformed messages and Data Lake Parquet batches
+curl http://localhost:8080/api/kafka/audit/connect/transformed
+curl http://localhost:8080/api/kafka/audit/connect/lake-batches
+```
+
 ---
 
 ## 🪵 Logging & Diagnostic Files

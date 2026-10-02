@@ -48,6 +48,10 @@ app:
       saga-orders-commands: "saga.orders.commands"
       saga-inventory-commands: "saga.inventory.commands"
       saga-completed: "saga.events.completed"
+      streams-shipments: "streams.shipments.input"
+      streams-orders-shipments-joined: "streams.orders-shipments.joined"
+      user-sessions: "user.sessions.input"
+      cdc-raw: "orders.cdc.raw"
 
 management:
   endpoints:

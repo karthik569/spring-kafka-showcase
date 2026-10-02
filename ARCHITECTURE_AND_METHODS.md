@@ -261,6 +261,37 @@ The application runs on port `8080` and connects to Termux's local Apache Kafka 
      - `POST /api/kafka/audit/dlt/redrive/{orderId}`
      - `GET /api/kafka/audit/dlt/redrive/history`
 
+5. **Interactive State Store Queries (`OrderStreamsService.java`)**:
+   - **Embedded Key-Value RPC**: Exposes RocksDB / In-Memory state stores directly via REST without querying external databases.
+   - **Endpoints**:
+     - `GET /api/kafka/audit/streams/interactive/customer/{customerId}`
+     - `GET /api/kafka/audit/streams/interactive/all`
+
+6. **KStream-KStream Sliding-Window Joins (`ShipmentEvent.java`, `OrderShipmentEnrichedEvent.java`)**:
+   - **Stream-to-Stream Temporal Correlation**: Correlates order events with downstream warehouse shipment events within an adjustable 5-minute sliding window.
+   - **Endpoints**:
+     - `POST /api/kafka/publish/shipment`
+     - `GET /api/kafka/audit/streams/joined-shipments`
+
+7. **Session Windows & Inactivity Gaps (`UserSessionEvent.java`, `UserSessionSummary.java`)**:
+   - **Dynamic User Journey Windows**: Aggregates interaction bursts that terminate automatically after a 15-minute gap of inactivity.
+   - **Endpoints**:
+     - `POST /api/kafka/publish/user-session`
+     - `GET /api/kafka/audit/streams/sessions/{userId}`
+
+8. **W3C Distributed Tracing & Lineage (`DistributedTracingService.java`, `W3cTraceContext.java`)**:
+   - **OpenTelemetry Header Injection**: Injects standard W3C `traceparent` (`00-<traceId>-<spanId>-<flags>`) into record headers on publish and extracts it across listener hops, building an end-to-end lineage graph.
+   - **Endpoints**:
+     - `GET /api/kafka/audit/tracing/lineage/{traceId}`
+     - `GET /api/kafka/audit/tracing/all`
+
+9. **Debezium CDC, SMT Transforms & S3 Lake Sink Simulator (`KafkaConnectSimulatorService.java`)**:
+   - **Declarative Pipeline**: Captures row mutations, executes Single Message Transforms (SMTs) for PII credit card masking and topic routing, and batches records into partitioned Parquet files on object storage.
+   - **Endpoints**:
+     - `POST /api/kafka/publish/connect/cdc-table`
+     - `GET /api/kafka/audit/connect/transformed`
+     - `GET /api/kafka/audit/connect/lake-batches`
+
 ---
 
 ### I. Interactive Architecture Diagrams (HTML)

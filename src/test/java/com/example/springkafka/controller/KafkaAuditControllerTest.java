@@ -40,6 +40,10 @@ class KafkaAuditControllerTest {
                 new com.example.springkafka.service.IdempotentDeduplicationService();
         com.example.springkafka.service.DeadLetterRedriveService redriveService =
                 new com.example.springkafka.service.DeadLetterRedriveService(null, consumerService);
+        com.example.springkafka.service.DistributedTracingService tracingService =
+                new com.example.springkafka.service.DistributedTracingService();
+        com.example.springkafka.service.KafkaConnectSimulatorService connectSimulator =
+                new com.example.springkafka.service.KafkaConnectSimulatorService(null, new com.fasterxml.jackson.databind.ObjectMapper());
 
         KafkaAuditController controller = new KafkaAuditController(
                 consumerService,
@@ -49,7 +53,9 @@ class KafkaAuditControllerTest {
                 eventSourcingService,
                 sagaService,
                 dedupService,
-                redriveService
+                redriveService,
+                tracingService,
+                connectSimulator
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

@@ -35,25 +35,27 @@ public class KafkaProducerService {
 
     private final KafkaTemplate<String, Object> genericKafkaTemplate;
     private final KafkaTemplate<String, byte[]> byteArrayKafkaTemplate;
+    private final DistributedTracingService tracingService;
 
-    /**
-     * Constructs a new {@code KafkaProducerService} with the configured templates.
-     *
-     * @param genericKafkaTemplate generic template for JSON payloads (OrderEvent, InventoryItem, tombstone nulls)
-     * @param byteArrayKafkaTemplate dedicated byte array template for binary Avro payloads
-     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public KafkaProducerService(
+            KafkaTemplate<String, Object> genericKafkaTemplate,
+            KafkaTemplate<String, byte[]> byteArrayKafkaTemplate,
+            DistributedTracingService tracingService) {
+        this.genericKafkaTemplate = genericKafkaTemplate;
+        this.byteArrayKafkaTemplate = byteArrayKafkaTemplate;
+        this.tracingService = (tracingService != null) ? tracingService : new DistributedTracingService();
+    }
+
     public KafkaProducerService(
             KafkaTemplate<String, Object> genericKafkaTemplate,
             KafkaTemplate<String, byte[]> byteArrayKafkaTemplate) {
-        this.genericKafkaTemplate = genericKafkaTemplate;
-        this.byteArrayKafkaTemplate = byteArrayKafkaTemplate;
+        this(genericKafkaTemplate, byteArrayKafkaTemplate, new DistributedTracingService());
     }
 
     /**
      * Publishes an {@link OrderEvent} asynchronously to a designated Kafka topic using default partition hash routing.
-     * <p>
-     * Non-blocking: attaches asynchronous handlers ({@code thenApply} and {@code exceptionally}) to construct
-     * a {@link PublishResponse} containing the published topic, partition, offset, and delivery status.
+     * Injects W3C distributed tracing context (traceparent) into Kafka record headers.
      *
      * @param topic the target Kafka topic name
      * @param key   the message key used by Kafka's DefaultPartitioner to calculate partition hashing
@@ -62,14 +64,33 @@ public class KafkaProducerService {
      */
     public CompletableFuture<PublishResponse> sendAsync(String topic, String key, OrderEvent event) {
         OrderEvent enriched = event.withTimestamp();
-        log.info("[KAFKA-PRODUCER] Sending async event to topic={} key={}", topic, key);
+        com.example.springkafka.dto.W3cTraceContext trace = tracingService.startTrace("producer-order-service");
+        log.info("[KAFKA-PRODUCER] Sending async event to topic={} key={} traceId={}", topic, key, trace.traceId());
 
-        return genericKafkaTemplate.send(topic, key, enriched)
+        ProducerRecord<String, Object> record = new ProducerRecord<>(topic, key, enriched);
+        record.headers().add("traceparent", trace.toTraceParentHeader().getBytes(StandardCharsets.UTF_8));
+        record.headers().add("X-Correlation-ID", trace.traceId().getBytes(StandardCharsets.UTF_8));
+
+        return genericKafkaTemplate.send(record)
                 .thenApply(sendResult -> mapToSendResponse(sendResult, "SUCCESS"))
                 .exceptionally(ex -> {
                     log.error("[KAFKA-PRODUCER] Failed to send message to topic={}: {}", topic, ex.getMessage());
                     return new PublishResponse(topic, -1, -1, key, "FAILED: " + ex.getMessage(), Instant.now().toString());
                 });
+    }
+
+    public CompletableFuture<PublishResponse> sendShipmentAsync(String topic, String key, com.example.springkafka.dto.ShipmentEvent event) {
+        log.info("[KAFKA-PRODUCER] Sending async shipment event to topic={} key={}", topic, key);
+        return genericKafkaTemplate.send(topic, key, event)
+                .thenApply(sendResult -> mapToSendResponse(sendResult, "SUCCESS"))
+                .exceptionally(ex -> new PublishResponse(topic, -1, -1, key, "FAILED: " + ex.getMessage(), Instant.now().toString()));
+    }
+
+    public CompletableFuture<PublishResponse> sendUserSessionAsync(String topic, String key, com.example.springkafka.dto.UserSessionEvent event) {
+        log.info("[KAFKA-PRODUCER] Sending async user session to topic={} key={}", topic, key);
+        return genericKafkaTemplate.send(topic, key, event)
+                .thenApply(sendResult -> mapToSendResponse(sendResult, "SUCCESS"))
+                .exceptionally(ex -> new PublishResponse(topic, -1, -1, key, "FAILED: " + ex.getMessage(), Instant.now().toString()));
     }
 
     /**

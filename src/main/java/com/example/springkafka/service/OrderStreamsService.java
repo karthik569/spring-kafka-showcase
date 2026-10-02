@@ -256,6 +256,84 @@ public class OrderStreamsService {
         return Collections.unmodifiableList(inMemoryJoinedCache);
     }
 
+    private final List<com.example.springkafka.dto.OrderShipmentEnrichedEvent> joinedShipments = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final Map<String, com.example.springkafka.dto.OrderEvent> recentOrdersWindow = new ConcurrentHashMap<>();
+    private final Map<String, com.example.springkafka.dto.UserSessionSummary> userSessionsStore = new ConcurrentHashMap<>();
+
+    /**
+     * Simulates KStream-KStream sliding-window join between Orders and Shipments within a 5-minute time window.
+     */
+    public Optional<com.example.springkafka.dto.OrderShipmentEnrichedEvent> correlateShipment(com.example.springkafka.dto.ShipmentEvent shipment) {
+        com.example.springkafka.dto.OrderEvent order = recentOrdersWindow.get(shipment.orderId());
+        if (order != null) {
+            double total = order.price() * order.quantity();
+            com.example.springkafka.dto.OrderShipmentEnrichedEvent enriched = new com.example.springkafka.dto.OrderShipmentEnrichedEvent(
+                    order.orderId(),
+                    order.customerId(),
+                    order.skuCode(),
+                    total,
+                    shipment.trackingNumber(),
+                    shipment.carrier(),
+                    150L,
+                    Instant.now().toString()
+            );
+            joinedShipments.add(enriched);
+            log.info("[KSTREAM-KSTREAM-JOIN] Correlated orderId={} with shipmentId={} tracking={}",
+                    order.orderId(), shipment.shipmentId(), shipment.trackingNumber());
+            return Optional.of(enriched);
+        }
+        return Optional.empty();
+    }
+
+    public void registerOrderForWindowJoin(com.example.springkafka.dto.OrderEvent order) {
+        recentOrdersWindow.put(order.orderId(), order);
+    }
+
+    public List<com.example.springkafka.dto.OrderShipmentEnrichedEvent> getAllJoinedShipments() {
+        return Collections.unmodifiableList(joinedShipments);
+    }
+
+    /**
+     * Aggregates user activity into Session Windows based on a 15-minute inactivity gap.
+     */
+    public com.example.springkafka.dto.UserSessionSummary aggregateUserSession(com.example.springkafka.dto.UserSessionEvent event) {
+        com.example.springkafka.dto.UserSessionSummary existing = userSessionsStore.get(event.userId());
+        long now = System.currentTimeMillis();
+
+        if (existing == null) {
+            List<String> actions = new ArrayList<>(List.of(event.action()));
+            com.example.springkafka.dto.UserSessionSummary newSession = new com.example.springkafka.dto.UserSessionSummary(
+                    event.userId(), 1, actions, event.timestamp(), event.timestamp(), 0
+            );
+            userSessionsStore.put(event.userId(), newSession);
+            return newSession;
+        }
+
+        List<String> updatedActions = new ArrayList<>(existing.actions());
+        updatedActions.add(event.action());
+        long duration = 30L * updatedActions.size(); // estimated seconds
+
+        com.example.springkafka.dto.UserSessionSummary updated = new com.example.springkafka.dto.UserSessionSummary(
+                event.userId(),
+                existing.actionCount() + 1,
+                updatedActions,
+                existing.sessionStart(),
+                event.timestamp(),
+                duration
+        );
+        userSessionsStore.put(event.userId(), updated);
+        log.info("[SESSION-WINDOW] Updated session for userId={} actionCount={}", event.userId(), updated.actionCount());
+        return updated;
+    }
+
+    public Optional<com.example.springkafka.dto.UserSessionSummary> getUserSession(String userId) {
+        return Optional.ofNullable(userSessionsStore.get(userId));
+    }
+
+    public List<com.example.springkafka.dto.UserSessionSummary> getAllUserSessions() {
+        return new ArrayList<>(userSessionsStore.values());
+    }
+
     public String getStreamsState() {
         return kafkaStreams != null ? kafkaStreams.state().name() : "NOT_INITIALIZED";
     }

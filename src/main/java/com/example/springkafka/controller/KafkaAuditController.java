@@ -37,6 +37,8 @@ public class KafkaAuditController {
     private final com.example.springkafka.service.SagaOrchestratorService sagaService;
     private final com.example.springkafka.service.IdempotentDeduplicationService dedupService;
     private final com.example.springkafka.service.DeadLetterRedriveService redriveService;
+    private final com.example.springkafka.service.DistributedTracingService tracingService;
+    private final com.example.springkafka.service.KafkaConnectSimulatorService connectSimulator;
 
     public KafkaAuditController(
             KafkaConsumerService consumerService,
@@ -46,7 +48,9 @@ public class KafkaAuditController {
             com.example.springkafka.service.EventSourcingService eventSourcingService,
             com.example.springkafka.service.SagaOrchestratorService sagaService,
             com.example.springkafka.service.IdempotentDeduplicationService dedupService,
-            com.example.springkafka.service.DeadLetterRedriveService redriveService) {
+            com.example.springkafka.service.DeadLetterRedriveService redriveService,
+            com.example.springkafka.service.DistributedTracingService tracingService,
+            com.example.springkafka.service.KafkaConnectSimulatorService connectSimulator) {
         this.consumerService = consumerService;
         this.streamsService = streamsService;
         this.schemaRegistryService = schemaRegistryService;
@@ -55,6 +59,8 @@ public class KafkaAuditController {
         this.sagaService = sagaService;
         this.dedupService = dedupService;
         this.redriveService = redriveService;
+        this.tracingService = tracingService;
+        this.connectSimulator = connectSimulator;
     }
 
     @Operation(
@@ -332,5 +338,98 @@ public class KafkaAuditController {
     @GetMapping("/dlt/redrive/history")
     public List<Map<String, Object>> getRedriveHistory() {
         return redriveService.getRedriveHistory();
+    }
+
+    // 19. Interactive Queries (Kafka Streams State Store)
+    @Operation(
+            summary = "Interactive query: Get customer analytics directly from state store",
+            description = "Queries the Kafka Streams local materialized state store directly via RPC for customer aggregate spend."
+    )
+    @GetMapping("/streams/interactive/customer/{customerId}")
+    public ResponseEntity<StreamAnalytics> getInteractiveCustomerAnalytics(@PathVariable String customerId) {
+        return streamsService.getAnalyticsForCustomer(customerId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @Operation(
+            summary = "Interactive query: Get all customer analytics from state store",
+            description = "Scans all keys across the materialized Kafka Streams in-memory state store."
+    )
+    @GetMapping("/streams/interactive/all")
+    public List<StreamAnalytics> getAllInteractiveAnalytics() {
+        return streamsService.getAllAnalytics();
+    }
+
+    // 20. KStream-KStream Sliding-Window Joins
+    @Operation(
+            summary = "Get KStream-KStream sliding-window correlated orders and shipments",
+            description = "Returns order events joined with warehouse shipment events within a temporal sliding window."
+    )
+    @GetMapping("/streams/joined-shipments")
+    public List<com.example.springkafka.dto.OrderShipmentEnrichedEvent> getJoinedShipments() {
+        return streamsService.getAllJoinedShipments();
+    }
+
+    // 21. Session Windows (Inactivity Gap)
+    @Operation(
+            summary = "Get user session summary (Kafka Streams Session Windows)",
+            description = "Returns aggregated interactions for a user within active session windows separated by inactivity gaps."
+    )
+    @GetMapping("/streams/sessions/{userId}")
+    public ResponseEntity<com.example.springkafka.dto.UserSessionSummary> getUserSession(@PathVariable String userId) {
+        return streamsService.getUserSession(userId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/streams/sessions")
+    public List<com.example.springkafka.dto.UserSessionSummary> getAllUserSessions() {
+        return streamsService.getAllUserSessions();
+    }
+
+    // 22. W3C Distributed Tracing Lineage
+    @Operation(
+            summary = "Get distributed transaction lineage graph for a trace ID",
+            description = "Returns all spans recorded across producers, topic hops, and consumers for an end-to-end W3C trace ID."
+    )
+    @GetMapping("/tracing/lineage/{traceId}")
+    public ResponseEntity<List<com.example.springkafka.dto.W3cTraceContext>> getTraceLineage(@PathVariable String traceId) {
+        return tracingService.getTraceLineage(traceId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/tracing/all")
+    public Map<String, List<com.example.springkafka.dto.W3cTraceContext>> getAllTraces() {
+        return tracingService.getAllTraces();
+    }
+
+    // 23. Kafka Connect CDC & Lake Sink
+    @Operation(
+            summary = "Get raw Debezium CDC table change logs",
+            description = "Returns database table change-data-capture logs captured from write-ahead logs."
+    )
+    @GetMapping("/connect/raw")
+    public List<com.example.springkafka.service.KafkaConnectSimulatorService.CdcRecord> getRawCdc() {
+        return connectSimulator.getRawCdcEvents();
+    }
+
+    @Operation(
+            summary = "Get SMT-transformed CDC messages routed to Kafka",
+            description = "Returns CDC messages after PII masking and regex topic routing Single Message Transforms."
+    )
+    @GetMapping("/connect/transformed")
+    public List<com.example.springkafka.service.KafkaConnectSimulatorService.TransformedCdcMessage> getTransformedCdc() {
+        return connectSimulator.getTransformedMessages();
+    }
+
+    @Operation(
+            summary = "Get Cloud Data Lake / S3 Sink batches",
+            description = "Returns partitioned Parquet batches flushed by the simulated S3 Sink Connector."
+    )
+    @GetMapping("/connect/lake-batches")
+    public List<com.example.springkafka.service.KafkaConnectSimulatorService.LakeBatch> getLakeBatches() {
+        return connectSimulator.getLakeBatches();
     }
 }

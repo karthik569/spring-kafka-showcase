@@ -58,34 +58,36 @@ public class KafkaConsumerService {
     private final com.example.springkafka.avro.AvroSerializerService avroSerializer;
     private final com.example.springkafka.security.FieldEncryptionService encryptionService;
     private final IdempotentDeduplicationService dedupService;
+    private final DistributedTracingService tracingService;
+    private final OrderStreamsService streamsService;
 
     @org.springframework.beans.factory.annotation.Autowired
     public KafkaConsumerService(
             com.example.springkafka.avro.AvroSerializerService avroSerializer,
             com.example.springkafka.security.FieldEncryptionService encryptionService,
-            IdempotentDeduplicationService dedupService) {
+            IdempotentDeduplicationService dedupService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) DistributedTracingService tracingService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) OrderStreamsService streamsService) {
         this.avroSerializer = avroSerializer;
         this.encryptionService = encryptionService;
         this.dedupService = dedupService;
+        this.tracingService = (tracingService != null) ? tracingService : new DistributedTracingService();
+        this.streamsService = streamsService;
     }
 
     public KafkaConsumerService() {
         this.avroSerializer = new com.example.springkafka.avro.AvroSerializerService();
         this.encryptionService = new com.example.springkafka.security.FieldEncryptionService();
         this.dedupService = new IdempotentDeduplicationService();
+        this.tracingService = new DistributedTracingService();
+        this.streamsService = null;
     }
+
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
     /**
      * Standard point-to-point Kafka listener ingesting single order events.
-     * <p>
-     * Demonstrates header extraction for partition ID, topic offset, and partition key,
-     * and records successfully processed events into the thread-safe audit store.
-     *
-     * @param event     the deserialized {@link OrderEvent} payload
-     * @param partition the zero-based partition number assigned by Kafka
-     * @param offset    the sequential offset index within the partition
-     * @param topic     the name of the topic from which the record was read
-     * @param key       the partition/message routing key (optional)
+     * Extracts W3C traceparent headers to continue distributed tracing.
      */
     @KafkaListener(topics = "orders.standard", groupId = "standard-consumers-group")
     public void consumeStandard(
@@ -93,7 +95,16 @@ public class KafkaConsumerService {
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
             @Header(KafkaHeaders.OFFSET) long offset,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
-            @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
+            @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key,
+            @Header(value = "traceparent", required = false) String traceparent) {
+
+        if (traceparent != null && !traceparent.isEmpty()) {
+            tracingService.recordHop(traceparent, "consumer-standard-service");
+        }
+
+        if (streamsService != null) {
+            streamsService.registerOrderForWindowJoin(event);
+        }
 
         boolean isFirstTime = dedupService.checkAndSet(event.orderId(), topic + ":" + offset);
         if (!isFirstTime) {
@@ -105,6 +116,48 @@ public class KafkaConsumerService {
                 event.orderId(), topic, partition, offset);
 
         receivedRecords.add(AuditRecord.of(topic, partition, offset, key, event, "standard-consumers-group", "PROCESSED"));
+    }
+
+    @KafkaListener(topics = "streams.shipments.input", groupId = "shipment-correlation-group")
+    public void consumeShipment(org.apache.kafka.clients.consumer.ConsumerRecord<String, Object> record) {
+        try {
+            com.example.springkafka.dto.ShipmentEvent event = (record.value() instanceof com.example.springkafka.dto.ShipmentEvent se)
+                    ? se
+                    : objectMapper.readValue(String.valueOf(record.value()), com.example.springkafka.dto.ShipmentEvent.class);
+            log.info("[KAFKA-CONSUMER-SHIPMENT] Received shipment tracking={} for orderId={}", event.trackingNumber(), event.orderId());
+            if (streamsService != null) {
+                streamsService.correlateShipment(event);
+            }
+        } catch (Exception e) {
+            log.warn("[KAFKA-CONSUMER-SHIPMENT] Processing shipment payload directly: {}", record.value());
+            if (streamsService != null && record.key() != null) {
+                streamsService.correlateShipment(com.example.springkafka.dto.ShipmentEvent.of("SHIP-" + record.key(), record.key(), "TRK-" + record.key(), "EXPRESS"));
+            }
+        }
+    }
+
+    @KafkaListener(topics = "user.sessions.input", groupId = "user-sessions-group")
+    public void consumeUserSession(org.apache.kafka.clients.consumer.ConsumerRecord<String, Object> record) {
+        try {
+            com.example.springkafka.dto.UserSessionEvent event = (record.value() instanceof com.example.springkafka.dto.UserSessionEvent ue)
+                    ? ue
+                    : objectMapper.readValue(String.valueOf(record.value()), com.example.springkafka.dto.UserSessionEvent.class);
+            log.info("[KAFKA-CONSUMER-SESSION] User session interaction userId={} action={}", event.userId(), event.action());
+            if (streamsService != null) {
+                streamsService.aggregateUserSession(event);
+            }
+        } catch (Exception e) {
+            log.warn("[KAFKA-CONSUMER-SESSION] Processing session payload directly: {}", record.value());
+            if (streamsService != null && record.key() != null) {
+                streamsService.aggregateUserSession(com.example.springkafka.dto.UserSessionEvent.of("SESS-" + record.key(), record.key(), "VIEW_PAGE", "/home"));
+            }
+        }
+    }
+
+    @KafkaListener(topics = "orders.cdc.raw", groupId = "cdc-consumers-group")
+    public void consumeCdcRaw(
+            org.apache.kafka.clients.consumer.ConsumerRecord<String, String> record) {
+        log.info("[KAFKA-CONSUMER-CDC] Consumed CDC raw envelope key={} valueLength={}", record.key(), record.value().length());
     }
 
     /**

@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -29,6 +30,7 @@ public class KafkaProducerController {
     private final com.example.springkafka.service.OrderStreamsService streamsService;
     private final com.example.springkafka.service.EventSourcingService eventSourcingService;
     private final com.example.springkafka.service.SagaOrchestratorService sagaService;
+    private final com.example.springkafka.service.KafkaConnectSimulatorService connectSimulator;
 
     public KafkaProducerController(
             KafkaProducerService producerService,
@@ -37,7 +39,8 @@ public class KafkaProducerController {
             com.example.springkafka.security.FieldEncryptionService encryptionService,
             com.example.springkafka.service.OrderStreamsService streamsService,
             com.example.springkafka.service.EventSourcingService eventSourcingService,
-            com.example.springkafka.service.SagaOrchestratorService sagaService) {
+            com.example.springkafka.service.SagaOrchestratorService sagaService,
+            com.example.springkafka.service.KafkaConnectSimulatorService connectSimulator) {
         this.producerService = producerService;
         this.avroSerializer = avroSerializer;
         this.outboxService = outboxService;
@@ -45,6 +48,7 @@ public class KafkaProducerController {
         this.streamsService = streamsService;
         this.eventSourcingService = eventSourcingService;
         this.sagaService = sagaService;
+        this.connectSimulator = connectSimulator;
     }
 
     // 1. Simple Publish to Standard Topic
@@ -380,5 +384,41 @@ public class KafkaProducerController {
             @RequestParam(defaultValue = "false") boolean forcePaymentFail) {
         com.example.springkafka.dto.SagaInstance saga = sagaService.startOrderSaga(event.withTimestamp(), forcePaymentFail);
         return ResponseEntity.ok(saga);
+    }
+
+    // 19. Publish Shipment for KStream-KStream Sliding-Window Join
+    @Operation(
+            summary = "Publish shipment event (KStream-KStream sliding-window correlation)",
+            description = "Publishes a warehouse shipment event to 'streams.shipments.input' which is correlated with matching orders within a sliding window."
+    )
+    @PostMapping("/shipment")
+    public CompletableFuture<PublishResponse> publishShipment(
+            @RequestBody com.example.springkafka.dto.ShipmentEvent event) {
+        return producerService.sendShipmentAsync("streams.shipments.input", event.orderId(), event);
+    }
+
+    // 20. Publish User Session Interaction for Session Windows
+    @Operation(
+            summary = "Publish user session event (Kafka Streams Session Windows)",
+            description = "Publishes a user interaction event to 'user.sessions.input' aggregated based on an inactivity gap."
+    )
+    @PostMapping("/user-session")
+    public CompletableFuture<PublishResponse> publishUserSession(
+            @RequestBody com.example.springkafka.dto.UserSessionEvent event) {
+        return producerService.sendUserSessionAsync("user.sessions.input", event.userId(), event);
+    }
+
+    // 21. Debezium CDC + SMT + Lake Sink Simulator
+    @Operation(
+            summary = "Simulate Debezium CDC table change with SMT masking and Lake Sink",
+            description = "Simulates capturing a database table mutation, applies inline PII masking SMTs, streams to 'orders.cdc.raw', and batches into a simulated S3 Parquet data lake."
+    )
+    @PostMapping("/connect/cdc-table")
+    public ResponseEntity<com.example.springkafka.service.KafkaConnectSimulatorService.TransformedCdcMessage> publishCdcChange(
+            @RequestParam(defaultValue = "orders") String table,
+            @RequestParam(defaultValue = "INSERT") String op,
+            @RequestBody Map<String, Object> afterState) {
+        var result = connectSimulator.ingestTableChange(table, op, Map.of(), afterState);
+        return ResponseEntity.ok(result);
     }
 }
