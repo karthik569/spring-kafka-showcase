@@ -3,6 +3,8 @@
 A comprehensive, production-grade Spring Boot application demonstrating the full suite of **Apache Kafka** capabilities on **Java 21** and **Spring Boot 3.3**.
 
 > 💡 **New to Apache Kafka?** Check out the step-by-step [Getting Started Guide](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/GETTING_STARTED_WITH_KAFKA.md) for conceptual explanations, interactive tutorials, and CLI cheat sheets.
+>
+> 🎨 **Interactive Architecture Diagrams**: Open [`kafka-architecture-diagrams.html`](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/kafka-architecture-diagrams.html) in your browser to view full Mermaid diagrams for Non-blocking Retries, Manual Ack, Kafka Streams, Log Compaction, and Transactions.
 
 ---
 
@@ -59,32 +61,46 @@ A comprehensive, production-grade Spring Boot application demonstrating the full
 ## 🌟 Comprehensive Method-by-Method Breakdown
 
 ### 1. [`KafkaProducerService`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/service/KafkaProducerService.java)
-- **`CompletableFuture<SendResult<String, OrderEvent>> sendSimpleOrder(OrderEvent event)`**: Dispatches an order to `orders.standard` using the `orderId` as the partition key. Attaches non-blocking completion callbacks (`whenComplete`) to log partition assignment, topic offset, and latency.
-- **`CompletableFuture<SendResult<String, OrderEvent>> sendOrderToPartition(OrderEvent event, int partition)`**: Constructs a low-level `ProducerRecord` explicitly designating the target partition number and injecting diagnostic metadata headers (`X-Correlation-ID`, `X-Timestamp`).
-- **`CompletableFuture<SendResult<String, OrderEvent>> sendPriorityOrder(OrderEvent event)`**: Routes high-priority orders to `orders.high-priority`. Records with `priority != HIGH` are dropped upstream by the consumer filter.
-- **`CompletableFuture<SendResult<String, OrderEvent>> sendRetryableOrder(OrderEvent event)`**: Emits messages to `orders.retryable` to test resilience pipelines and Dead-Letter-Topic diversion.
-- **`void sendBatchOrders(List<OrderEvent> events)`**: Iterates over a collection of orders, publishing each asynchronously with tracking callbacks to demonstrate high-throughput publishing.
-- **`boolean sendTransactionalOrders(List<OrderEvent> events)`**: Executes atomic message batch publishing inside `kafkaTemplate.executeInTransaction()`, ensuring all-or-nothing delivery semantics.
+- **`CompletableFuture<PublishResponse> sendAsync(String topic, String key, OrderEvent event)`**: Dispatches an order asynchronously with non-blocking `.thenApply()` and `.exceptionally()` callbacks.
+- **`CompletableFuture<PublishResponse> sendWithHeaders(String topic, Integer partition, String key, OrderEvent event)`**: Explicit partition targeting injecting `X-Correlation-ID` and `X-Source-Service` distributed tracing headers.
+- **`boolean sendInTransaction(String topic, String key, OrderEvent... events)`**: Publishes multiple events inside `kafkaTemplate.executeInTransaction()`, guaranteeing atomic all-or-nothing delivery.
+- **`CompletableFuture<PublishResponse> sendInventory(String topic, String skuCode, InventoryItem item)`**: Dispatches inventory updates or tombstone deletion records (`null` value payload) to compacted topics.
 
 ### 2. [`KafkaConsumerService`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/service/KafkaConsumerService.java)
-- **`void consumeStandardOrder(ConsumerRecord<String, OrderEvent> record)`**: `@KafkaListener(topics = "orders.standard", groupId = "standard-consumers-group")`; ingests standard orders, extracts topic/partition/offset, and appends to the in-memory audit store.
-- **`void consumePriorityOrder(ConsumerRecord<String, OrderEvent> record)`**: `@KafkaListener(topics = "orders.high-priority", containerFactory = "filterContainerFactory")`; consumes filtered VIP events passed by `RecordFilterStrategy`.
-- **`void consumeRetryableOrder(ConsumerRecord<String, OrderEvent> record)`**: Ingests test messages. If `event.simulateFailure() == true`, throws an exception to trigger the retry policy (2 retries) and automatic routing to `.DLT`.
-- **`void consumeDltOrder(ConsumerRecord<String, OrderEvent> record)`**: `@KafkaListener(topics = "orders.retryable.DLT")`; intercepts poisoned records diverted to the dead-letter queue and records failure metrics.
-- **`void consumeBatchOrders(List<ConsumerRecord<String, OrderEvent>> records)`**: `@KafkaListener(containerFactory = "batchContainerFactory")`; consumes batches of messages in bulk, drastically improving I/O throughput.
+- **`void consumeStandard(...)`**: `@KafkaListener(topics = "orders.standard")`; consumes records and logs partition and offset metadata.
+- **`void consumeHighPriority(...)`**: Filtered VIP consumer using `RecordFilterStrategy` to discard non-HIGH priority records upstream.
+- **`void consumeBatch(List<ConsumerRecord<String, OrderEvent>> records)`**: Batch listener ingesting bulk collections for high I/O efficiency.
+- **`void consumeRetryable(...)`**: Resilient consumer with simulated error triggers and automatic DLT fallback.
+- **`void consumeNonblocking(...)` & `@DltHandler`**: Non-blocking retry consumer (`@RetryableTopic`) with exponential backoff across separate retry topics.
+- **`void consumeManualAck(ConsumerRecord, Acknowledgment)`**: Manual offset management via `AckMode.MANUAL_IMMEDIATE` with `nack()` backpressure.
+- **`void consumeCompactedInventory(ConsumerRecord)`**: Materializes compacted key-value state, removing keys upon receiving tombstone records.
 
-### 3. [`KafkaProducerController`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaProducerController.java)
-- **`POST /api/kafka/publish/simple`**: REST trigger delegating to `sendSimpleOrder`.
-- **`POST /api/kafka/publish/partitioned`**: REST trigger accepting explicit `partition` integer query parameter.
-- **`POST /api/kafka/publish/priority`**: REST trigger publishing to the VIP filtered pipeline.
-- **`POST /api/kafka/publish/retry-dlt`**: REST trigger injecting synthetic failure flags to test DLT recovery.
-- **`POST /api/kafka/publish/batch`**: REST trigger accepting an array of order JSON objects.
-- **`POST /api/kafka/publish/transaction`**: REST trigger demonstrating transactional outbox publishing.
+### 3. [`OrderStreamsService`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/service/OrderStreamsService.java)
+- **Kafka Streams Aggregation Topology**: Consumes from `streams.orders.input`, groups by `customerId`, aggregates total order count, total spend, and average spend, and continuously emits to `streams.analytics.output`.
+- **In-Memory Materialized State Store**: Backed by `Stores.inMemoryKeyValueStore("customer-analytics-store")` for interactive queries.
 
-### 4. [`KafkaAuditController`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaAuditController.java)
-- **`GET /api/kafka/audit/received`**: Returns list of all processed events with partitions and offsets.
-- **`GET /api/kafka/audit/dlt`**: Returns poisoned events captured by the Dead-Letter-Topic consumer.
-- **`GET /api/kafka/audit/summary`**: Returns quantitative metrics (total processed, total DLT, etc.).
+### 4. [`KafkaProducerController`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaProducerController.java)
+- `POST /api/kafka/publish/simple`: Standard asynchronous publish
+- `POST /api/kafka/publish/partitioned`: Explicit partition routing with tracing headers
+- `POST /api/kafka/publish/priority`: High-priority filtered order
+- `POST /api/kafka/publish/retry-dlt`: Simulated error for DLT diversion
+- `POST /api/kafka/publish/batch`: High-throughput batch publishing
+- `POST /api/kafka/publish/transaction`: Atomic transactional publish
+- `POST /api/kafka/publish/nonblocking`: Non-blocking retries with exponential backoff
+- `POST /api/kafka/publish/manual-ack`: Manual acknowledgment & backpressure nack
+- `POST /api/kafka/publish/inventory`: Log compaction state upsert
+- `DELETE /api/kafka/publish/inventory/tombstone/{skuCode}`: Log compaction tombstone deletion
+- `POST /api/kafka/publish/streams-order`: Real-time Kafka Streams ingestion
+
+### 5. [`KafkaAuditController`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaAuditController.java)
+- `GET /api/kafka/audit/received`: Ingested standard & priority orders
+- `GET /api/kafka/audit/dlt`: Poisoned records in DLT
+- `GET /api/kafka/audit/nonblocking`: Non-blocking retry records & DLT exhaustion
+- `GET /api/kafka/audit/manual-ack`: Manual acknowledgment & nack redelivery records
+- `GET /api/kafka/audit/inventory`: Current compacted inventory key-value table
+- `GET /api/kafka/audit/streams/analytics`: All customer metrics aggregated by Kafka Streams
+- `GET /api/kafka/audit/streams/analytics/{customerId}`: Point query against local Streams state store
+- `GET /api/kafka/audit/summary`: Global quantitative metric summary across all pipelines
 
 ---
 

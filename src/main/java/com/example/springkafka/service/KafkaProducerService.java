@@ -33,15 +33,20 @@ public class KafkaProducerService {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaProducerService.class);
 
-    private final KafkaTemplate<String, OrderEvent> kafkaTemplate;
+    private final KafkaTemplate<String, Object> genericKafkaTemplate;
+    private final KafkaTemplate<String, byte[]> byteArrayKafkaTemplate;
 
     /**
-     * Constructs a new {@code KafkaProducerService} with the configured {@link KafkaTemplate}.
+     * Constructs a new {@code KafkaProducerService} with the configured templates.
      *
-     * @param kafkaTemplate the high-level Kafka producer template for message serialization and delivery
+     * @param genericKafkaTemplate generic template for JSON payloads (OrderEvent, InventoryItem, tombstone nulls)
+     * @param byteArrayKafkaTemplate dedicated byte array template for binary Avro payloads
      */
-    public KafkaProducerService(KafkaTemplate<String, OrderEvent> kafkaTemplate) {
-        this.kafkaTemplate = kafkaTemplate;
+    public KafkaProducerService(
+            KafkaTemplate<String, Object> genericKafkaTemplate,
+            KafkaTemplate<String, byte[]> byteArrayKafkaTemplate) {
+        this.genericKafkaTemplate = genericKafkaTemplate;
+        this.byteArrayKafkaTemplate = byteArrayKafkaTemplate;
     }
 
     /**
@@ -59,7 +64,7 @@ public class KafkaProducerService {
         OrderEvent enriched = event.withTimestamp();
         log.info("[KAFKA-PRODUCER] Sending async event to topic={} key={}", topic, key);
 
-        return kafkaTemplate.send(topic, key, enriched)
+        return genericKafkaTemplate.send(topic, key, enriched)
                 .thenApply(sendResult -> mapToSendResponse(sendResult, "SUCCESS"))
                 .exceptionally(ex -> {
                     log.error("[KAFKA-PRODUCER] Failed to send message to topic={}: {}", topic, ex.getMessage());
@@ -83,7 +88,7 @@ public class KafkaProducerService {
         OrderEvent enriched = event.withTimestamp();
         String correlationId = UUID.randomUUID().toString();
 
-        ProducerRecord<String, OrderEvent> record = new ProducerRecord<>(
+        ProducerRecord<String, Object> record = new ProducerRecord<>(
                 topic,
                 partition,
                 key,
@@ -94,7 +99,7 @@ public class KafkaProducerService {
 
         log.info("[KAFKA-PRODUCER] Sending with headers correlationId={} to partition={}", correlationId, partition);
 
-        return kafkaTemplate.send(record)
+        return genericKafkaTemplate.send(record)
                 .thenApply(sendResult -> mapToSendResponse(sendResult, "SUCCESS (Correlation: " + correlationId + ")"));
     }
 
@@ -111,7 +116,7 @@ public class KafkaProducerService {
      */
     public boolean sendInTransaction(String topic, String key, OrderEvent... events) {
         log.info("[KAFKA-PRODUCER] Executing Kafka transaction for {} events...", events.length);
-        return Boolean.TRUE.equals(kafkaTemplate.executeInTransaction(operations -> {
+        return Boolean.TRUE.equals(genericKafkaTemplate.executeInTransaction(operations -> {
             for (OrderEvent event : events) {
                 operations.send(topic, key, event.withTimestamp());
             }
@@ -121,13 +126,69 @@ public class KafkaProducerService {
     }
 
     /**
+     * Publishes an inventory record to the compacted topic. If item is null, dispatches a tombstone record
+     * (null payload) to trigger Kafka log compaction deletion.
+     *
+     * @param topic   target compacted topic
+     * @param skuCode key for the inventory item
+     * @param item    inventory item, or null to dispatch tombstone deletion record
+     * @return CompletableFuture of PublishResponse
+     */
+    public CompletableFuture<PublishResponse> sendInventory(String topic, String skuCode, com.example.springkafka.dto.InventoryItem item) {
+        Object payload = (item != null) ? item.withTimestamp() : null;
+        log.info("[KAFKA-PRODUCER] Publishing inventory to topic={} skuCode={} isTombstone={}",
+                topic, skuCode, (payload == null));
+
+        return genericKafkaTemplate.send(topic, skuCode, payload)
+                .thenApply(sendResult -> new PublishResponse(
+                        sendResult.getRecordMetadata().topic(),
+                        sendResult.getRecordMetadata().partition(),
+                        sendResult.getRecordMetadata().offset(),
+                        skuCode,
+                        (payload == null) ? "TOMBSTONE_DISPATCHED" : "INVENTORY_UPDATED",
+                        Instant.now().toString()
+                ))
+                .exceptionally(ex -> {
+                    log.error("[KAFKA-PRODUCER] Failed to send inventory to topic={}: {}", topic, ex.getMessage());
+                    return new PublishResponse(topic, -1, -1, skuCode, "FAILED: " + ex.getMessage(), Instant.now().toString());
+                });
+    }
+
+    /**
+     * Publishes a binary Apache Avro serialized payload.
+     *
+     * @param topic     target topic (e.g. orders.avro)
+     * @param key       partition/order key
+     * @param avroBytes compact binary Avro bytes
+     * @return CompletableFuture yielding PublishResponse
+     */
+    public CompletableFuture<PublishResponse> sendAvroOrder(String topic, String key, byte[] avroBytes) {
+        log.info("[KAFKA-PRODUCER] Publishing binary Avro event (size: {} bytes) to topic={} key={}",
+                avroBytes.length, topic, key);
+
+        return byteArrayKafkaTemplate.send(topic, key, avroBytes)
+                .thenApply(sendResult -> new PublishResponse(
+                        sendResult.getRecordMetadata().topic(),
+                        sendResult.getRecordMetadata().partition(),
+                        sendResult.getRecordMetadata().offset(),
+                        key,
+                        "AVRO_BINARY_PUBLISHED (bytes: " + avroBytes.length + ")",
+                        Instant.now().toString()
+                ))
+                .exceptionally(ex -> {
+                    log.error("[KAFKA-PRODUCER] Failed to send Avro to topic={}: {}", topic, ex.getMessage());
+                    return new PublishResponse(topic, -1, -1, key, "FAILED: " + ex.getMessage(), Instant.now().toString());
+                });
+    }
+
+    /**
      * Helper mapping method converting a Kafka {@link SendResult} into an application {@link PublishResponse}.
      *
      * @param result the metadata result returned by the Kafka broker
      * @param status the operational status description
      * @return structured {@link PublishResponse} with topic, partition, offset, and timestamp
      */
-    private PublishResponse mapToSendResponse(SendResult<String, OrderEvent> result, String status) {
+    private PublishResponse mapToSendResponse(SendResult<String, Object> result, String status) {
         return new PublishResponse(
                 result.getRecordMetadata().topic(),
                 result.getRecordMetadata().partition(),

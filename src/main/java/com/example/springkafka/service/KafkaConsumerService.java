@@ -1,17 +1,25 @@
 package com.example.springkafka.service;
 
 import com.example.springkafka.dto.AuditRecord;
+import com.example.springkafka.dto.InventoryItem;
 import com.example.springkafka.dto.OrderEvent;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.TopicSuffixingStrategy;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -36,6 +44,20 @@ public class KafkaConsumerService {
 
     private final List<AuditRecord> receivedRecords = new CopyOnWriteArrayList<>();
     private final List<AuditRecord> dltRecords = new CopyOnWriteArrayList<>();
+    private final Map<String, InventoryItem> inventoryState = new ConcurrentHashMap<>();
+    private final List<AuditRecord> nonblockingRecords = new CopyOnWriteArrayList<>();
+    private final List<AuditRecord> manualAckRecords = new CopyOnWriteArrayList<>();
+    private final List<AuditRecord> avroRecords = new CopyOnWriteArrayList<>();
+
+    private final com.example.springkafka.avro.AvroSerializerService avroSerializer;
+
+    public KafkaConsumerService(com.example.springkafka.avro.AvroSerializerService avroSerializer) {
+        this.avroSerializer = avroSerializer;
+    }
+
+    public KafkaConsumerService() {
+        this.avroSerializer = new com.example.springkafka.avro.AvroSerializerService();
+    }
 
     /**
      * Standard point-to-point Kafka listener ingesting single order events.
@@ -174,6 +196,116 @@ public class KafkaConsumerService {
     }
 
     /**
+     * Non-blocking retry consumer using {@link RetryableTopic}.
+     * <p>
+     * Employs separate retry topics with exponential backoff (1s, 2s) so that failed messages
+     * do not block or stall the partition for subsequent messages.
+     * After max attempts, forwards to DLT.
+     */
+    @RetryableTopic(
+            attempts = "3",
+            backoff = @Backoff(delay = 1000, multiplier = 2.0),
+            topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE
+    )
+    @KafkaListener(topics = "orders.nonblocking", groupId = "nonblocking-orders-group")
+    public void consumeNonblocking(
+            @Payload OrderEvent event,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
+
+        log.info("[KAFKA-NONBLOCKING] Processing orderId={} topic={} offset={} simulateFailure={}",
+                event.orderId(), topic, offset, event.simulateFailure());
+
+        if (event.simulateFailure()) {
+            log.error("[KAFKA-NONBLOCKING] Simulated error triggered for orderId={}. Forwarding to next retry topic!", event.orderId());
+            throw new RuntimeException("Simulated Nonblocking Processing Failure for " + event.orderId());
+        }
+
+        nonblockingRecords.add(AuditRecord.of(topic, partition, offset, key, event, "nonblocking-orders-group", "PROCESSED"));
+    }
+
+    /**
+     * DLT handler for {@link #consumeNonblocking}.
+     */
+    @DltHandler
+    public void handleNonblockingDlt(
+            @Payload OrderEvent failedEvent,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
+
+        log.warn("[KAFKA-NONBLOCKING-DLT] Exhausted non-blocking retries for orderId={} in topic={} offset={}",
+                failedEvent.orderId(), topic, offset);
+
+        nonblockingRecords.add(AuditRecord.of(topic, partition, offset, key, failedEvent, "nonblocking-orders-group", "DLT_EXHAUSTED"));
+    }
+
+    /**
+     * Manual acknowledgment consumer utilizing {@code manualAckContainerFactory} (AckMode.MANUAL_IMMEDIATE).
+     * <p>
+     * Grants fine-grained programmatic control over offset commits.
+     */
+    @KafkaListener(
+            topics = "orders.manual-ack",
+            groupId = "manual-ack-group",
+            containerFactory = "manualAckContainerFactory"
+    )
+    public void consumeManualAck(
+            ConsumerRecord<String, OrderEvent> record,
+            Acknowledgment acknowledgment) {
+
+        OrderEvent event = record.value();
+        log.info("[KAFKA-MANUAL-ACK] Received record key={} orderId={} simulateFailure={}",
+                record.key(), event != null ? event.orderId() : "null", event != null && event.simulateFailure());
+
+        if (event != null && event.simulateFailure()) {
+            log.warn("[KAFKA-MANUAL-ACK] Processing simulated failure for orderId={}. Negative acknowledgment (nack 1000ms delay)!",
+                    event.orderId());
+            acknowledgment.nack(java.time.Duration.ofMillis(1000));
+            manualAckRecords.add(AuditRecord.of(
+                    record.topic(), record.partition(), record.offset(), record.key(), event,
+                    "manual-ack-group", "NACKED_1000MS"
+            ));
+            return;
+        }
+
+        acknowledgment.acknowledge();
+        log.info("[KAFKA-MANUAL-ACK] Offset committed immediately for record key={}", record.key());
+        manualAckRecords.add(AuditRecord.of(
+                record.topic(), record.partition(), record.offset(), record.key(), event,
+                "manual-ack-group", "ACKNOWLEDGED_IMMEDIATE"
+        ));
+    }
+
+    /**
+     * Compacted Topic Consumer for Warehouse Inventory.
+     * <p>
+     * Demonstrates log compaction semantics:
+     * - Records with non-null values update/upsert the latest known state for the SKU key.
+     * - Records with null values (tombstone records) delete the key from the compacted state store.
+     */
+    @KafkaListener(
+            topics = "inventory.compacted",
+            groupId = "inventory-compacted-group"
+    )
+    public void consumeCompactedInventory(ConsumerRecord<String, InventoryItem> record) {
+        String sku = record.key();
+        InventoryItem item = record.value();
+
+        if (item == null) {
+            log.info("[KAFKA-COMPACTED] Received TOMBSTONE record for key={}. Removing from inventory state.", sku);
+            inventoryState.remove(sku);
+        } else {
+            log.info("[KAFKA-COMPACTED] Received inventory update for sku={} stock={} status={}",
+                    sku, item.stockQuantity(), item.status());
+            inventoryState.put(sku, item);
+        }
+    }
+
+    /**
      * Returns the thread-safe in-memory list of all successfully processed records.
      *
      * @return unmodifiable/thread-safe copy of processed {@link AuditRecord} entries
@@ -189,5 +321,44 @@ public class KafkaConsumerService {
      */
     public List<AuditRecord> getDltRecords() {
         return dltRecords;
+    }
+
+    public List<AuditRecord> getNonblockingRecords() {
+        return nonblockingRecords;
+    }
+
+    public List<AuditRecord> getManualAckRecords() {
+        return manualAckRecords;
+    }
+
+    /**
+     * Compact binary Apache Avro consumer listener.
+     */
+    @KafkaListener(
+            topics = "orders.avro",
+            groupId = "avro-orders-group",
+            containerFactory = "byteArrayContainerFactory"
+    )
+    public void consumeAvro(
+            ConsumerRecord<String, byte[]> record,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset) {
+
+        byte[] avroBytes = record.value();
+        OrderEvent deserialized = avroSerializer.deserializeFromAvro(avroBytes);
+
+        log.info("[KAFKA-CONSUMER-AVRO] Consumed orderId={} from topic={} partition={} offset={} (Avro payload: {} bytes)",
+                deserialized.orderId(), topic, partition, offset, avroBytes.length);
+
+        avroRecords.add(AuditRecord.of(topic, partition, offset, record.key(), deserialized, "avro-orders-group", "AVRO_DESERIALIZED"));
+    }
+
+    public List<AuditRecord> getAvroRecords() {
+        return avroRecords;
+    }
+
+    public Map<String, InventoryItem> getInventoryState() {
+        return inventoryState;
     }
 }

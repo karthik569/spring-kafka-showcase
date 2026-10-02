@@ -19,11 +19,13 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Spring Boot Apache Kafka Showcase API")
-                        .version("1.0.0")
+                        .version("1.1.0")
                         .description("Comprehensive REST API and testing workbench for Spring Boot Apache Kafka capabilities: "
-                                + "simple asynchronous publishing, partition-directed routing with tracing headers, "
+                                + "asynchronous publishing, partition-directed routing with tracing headers, "
                                 + "VIP priority record filtering, resilient Dead Letter Topic (DLT) retry pipelines, "
-                                + "high-throughput batching, and atomic Kafka transactions.")
+                                + "high-throughput batching, atomic Kafka transactions, non-blocking retries (@RetryableTopic), "
+                                + "manual acknowledgment (AckMode.MANUAL_IMMEDIATE), real-time Kafka Streams stateful analytics, "
+                                + "and log compaction with tombstone record deletion.")
                         .contact(new Contact()
                                 .name("Spring Kafka Showcase")
                                 .url("https://github.com/spring-projects/spring-kafka"))
@@ -35,9 +37,9 @@ public class OpenApiConfig {
                 ))
                 .tags(List.of(
                         new Tag().name("Kafka Producer API")
-                                .description("Publish messages to various Kafka topics with routing, partition targeting, retries, batches, and transactions"),
+                                .description("Publish messages across topics with partition targeting, filters, retries, batches, transactions, non-blocking backoff, manual ack, compacted inventory, and streams input"),
                         new Tag().name("Kafka Audit API")
-                                .description("Inspect received, dead-letter, and statistical records processed by the Kafka consumer listeners")
+                                .description("Inspect received records, DLTs, non-blocking backoff status, manual commit/nack logs, compacted inventory table, and Kafka Streams state store analytics")
                 ));
     }
 }

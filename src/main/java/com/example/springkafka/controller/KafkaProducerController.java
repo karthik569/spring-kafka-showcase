@@ -23,9 +23,13 @@ import java.util.concurrent.CompletableFuture;
 public class KafkaProducerController {
 
     private final KafkaProducerService producerService;
+    private final com.example.springkafka.avro.AvroSerializerService avroSerializer;
 
-    public KafkaProducerController(KafkaProducerService producerService) {
+    public KafkaProducerController(
+            KafkaProducerService producerService,
+            com.example.springkafka.avro.AvroSerializerService avroSerializer) {
         this.producerService = producerService;
+        this.avroSerializer = avroSerializer;
     }
 
     // 1. Simple Publish to Standard Topic
@@ -145,5 +149,124 @@ public class KafkaProducerController {
         return committed
                 ? ResponseEntity.ok("Successfully committed transaction with " + events.size() + " events")
                 : ResponseEntity.internalServerError().body("Transaction rollback occurred");
+    }
+
+    // 7. Non-Blocking Retry Publishing (@RetryableTopic demonstration)
+    @Operation(
+            summary = "Publish to non-blocking retry topic",
+            description = "Publishes to 'orders.nonblocking'. If fail=true, triggers @RetryableTopic exponential backoff across separate retry topics without blocking other messages in the partition."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Nonblocking retry order accepted",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = PublishResponse.class)))
+    })
+    @PostMapping("/nonblocking")
+    public CompletableFuture<PublishResponse> publishNonblocking(
+            @Parameter(description = "Set to true to force simulated consumer failure and test non-blocking backoff", example = "true")
+            @RequestParam(defaultValue = "true") boolean fail,
+            @RequestBody @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Order event payload", required = true) OrderEvent event) {
+        OrderEvent testEvent = new OrderEvent(
+                event.orderId(),
+                event.customerId(),
+                event.skuCode(),
+                event.quantity(),
+                event.price(),
+                event.priority(),
+                fail,
+                null
+        );
+        return producerService.sendAsync("orders.nonblocking", event.orderId(), testEvent);
+    }
+
+    // 8. Manual Acknowledgment Publishing
+    @Operation(
+            summary = "Publish to manual-ack topic",
+            description = "Publishes to 'orders.manual-ack'. The consumer uses AckMode.MANUAL_IMMEDIATE to acknowledge offsets or issue backpressure nacks."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Manual ack order dispatched",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = PublishResponse.class)))
+    })
+    @PostMapping("/manual-ack")
+    public CompletableFuture<PublishResponse> publishManualAck(
+            @Parameter(description = "Set to true to simulate failure triggering negative acknowledgment (nack)", example = "false")
+            @RequestParam(defaultValue = "false") boolean fail,
+            @RequestBody @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Order event payload", required = true) OrderEvent event) {
+        OrderEvent testEvent = new OrderEvent(
+                event.orderId(),
+                event.customerId(),
+                event.skuCode(),
+                event.quantity(),
+                event.price(),
+                event.priority(),
+                fail,
+                null
+        );
+        return producerService.sendAsync("orders.manual-ack", event.orderId(), testEvent);
+    }
+
+    // 9. Compacted Topic Inventory Update
+    @Operation(
+            summary = "Upsert inventory record (Log Compaction)",
+            description = "Publishes an updated state for a SKU key to 'inventory.compacted'. Kafka log cleaner retains the latest value per key."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Inventory record updated",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = PublishResponse.class)))
+    })
+    @PostMapping("/inventory")
+    public CompletableFuture<PublishResponse> publishInventory(
+            @RequestBody @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Inventory item to upsert", required = true) com.example.springkafka.dto.InventoryItem item) {
+        return producerService.sendInventory("inventory.compacted", item.skuCode(), item);
+    }
+
+    // 10. Compacted Topic Tombstone Record (Deletion)
+    @Operation(
+            summary = "Dispatch tombstone deletion record (Log Compaction)",
+            description = "Sends a null payload record for the specified SKU key to 'inventory.compacted', triggering deletion of the key during log compaction."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Tombstone record dispatched",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = PublishResponse.class)))
+    })
+    @DeleteMapping("/inventory/tombstone/{skuCode}")
+    public CompletableFuture<PublishResponse> publishTombstone(
+            @Parameter(description = "SKU Code key to delete via tombstone", example = "SKU-LAPTOP-X1")
+            @PathVariable String skuCode) {
+        return producerService.sendInventory("inventory.compacted", skuCode, null);
+    }
+
+    // 11. Kafka Streams Input Event
+    @Operation(
+            summary = "Publish order to Kafka Streams input topic",
+            description = "Publishes an order event to 'streams.orders.input'. Kafka Streams topology dynamically aggregates cumulative customer order count and spend."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Order published to streams topology",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = PublishResponse.class)))
+    })
+    @PostMapping("/streams-order")
+    public CompletableFuture<PublishResponse> publishStreamsOrder(
+            @RequestBody @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Order event payload for stream aggregation", required = true) OrderEvent event) {
+        String key = (event.customerId() != null) ? event.customerId() : event.orderId();
+        return producerService.sendAsync("streams.orders.input", key, event);
+    }
+
+    // 12. Apache Avro Binary Serialization Publish
+    @Operation(
+            summary = "Publish order with Apache Avro binary serialization",
+            description = "Encodes domain OrderEvent into compact Apache Avro binary bytes conforming to formal Avro record schema and publishes to 'orders.avro'."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Avro binary payload successfully published",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = PublishResponse.class)))
+    })
+    @PostMapping("/avro")
+    public CompletableFuture<PublishResponse> publishAvro(
+            @RequestBody @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Order event to serialize into compact Avro bytes", required = true) OrderEvent event) {
+        OrderEvent enriched = event.withTimestamp();
+        byte[] avroBytes = avroSerializer.serializeToAvro(enriched);
+        String key = (enriched.customerId() != null) ? enriched.customerId() : enriched.orderId();
+        return producerService.sendAvroOrder("orders.avro", key, avroBytes);
     }
 }

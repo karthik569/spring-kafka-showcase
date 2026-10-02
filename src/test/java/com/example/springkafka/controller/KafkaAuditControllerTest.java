@@ -17,7 +17,18 @@ class KafkaAuditControllerTest {
     @BeforeEach
     void setUp() {
         KafkaConsumerService consumerService = new KafkaConsumerService();
-        KafkaAuditController controller = new KafkaAuditController(consumerService);
+        com.example.springkafka.service.OrderStreamsService streamsService =
+                new com.example.springkafka.service.OrderStreamsService(new com.fasterxml.jackson.databind.ObjectMapper()) {
+                    @Override
+                    public void startTopology() {
+                        // no-op in unit test
+                    }
+                    @Override
+                    public String getStreamsState() {
+                        return "RUNNING";
+                    }
+                };
+        KafkaAuditController controller = new KafkaAuditController(consumerService, streamsService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

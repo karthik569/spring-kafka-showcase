@@ -14,6 +14,7 @@ spring:
       transaction-id-prefix: tx-
       properties:
         enable.idempotence: true
+        partitioner.class: com.example.springkafka.partitioner.RegionAwarePartitioner
     consumer:
       group-id: showcase-default-group
       auto-offset-reset: earliest
@@ -21,6 +22,7 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: "com.example.springkafka.*"
+        partition.assignment.strategy: org.apache.kafka.clients.consumer.CooperativeStickyAssignor
     listener:
       ack-mode: RECORD
 
@@ -33,6 +35,11 @@ app:
       retryable-dlt: "orders.retryable.DLT"
       batch: "orders.batch"
       transactional: "events.transactional"
+      nonblocking: "orders.nonblocking"
+      manual-ack: "orders.manual-ack"
+      compacted-inventory: "inventory.compacted"
+      streams-input: "streams.orders.input"
+      streams-output: "streams.analytics.output"
 
 management:
   endpoints:

@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Kafka Showcase - Advanced Architecture & Patterns</title>
+    <!-- Mermaid.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.2);
+            --border-color: #334155;
+            --tag-bg: #0369a1;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --purple: #a855f7;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 1.15rem;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .badges {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--accent);
+            padding: 0.3rem 0.8rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+            margin-bottom: 2.5rem;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 0.6rem 1.25rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            border-color: var(--accent);
+            background: #273549;
+        }
+
+        .tab-btn.active {
+            background: var(--accent);
+            color: #0f172a;
+            border-color: var(--accent);
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        .diagram-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 3rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            display: none;
+        }
+
+        .diagram-section.active {
+            display: block;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .section-title {
+            font-size: 1.6rem;
+            color: #f1f5f9;
+        }
+
+        .section-tag {
+            background: var(--tag-bg);
+            color: #e0f2fe;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 6px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .section-description {
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+            font-size: 1.05rem;
+        }
+
+        .mermaid-container {
+            background: #090d16;
+            border: 1px solid #243044;
+            border-radius: 8px;
+            padding: 2rem 1rem;
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+        }
+
+        .key-takeaways {
+            background: rgba(15, 23, 42, 0.6);
+            border-left: 4px solid var(--accent);
+            padding: 1rem 1.25rem;
+            border-radius: 0 8px 8px 0;
+            margin-top: 1.5rem;
+        }
+
+        .key-takeaways h4 {
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        .key-takeaways ul {
+            padding-left: 1.5rem;
+            color: #cbd5e1;
+        }
+
+        .key-takeaways li {
+            margin-bottom: 0.4rem;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Apache Kafka Architecture & Patterns</h1>
+        <p>Interactive architectural reference for Spring Kafka Showcase demonstrating Non-Blocking Retries, Manual Acknowledgment, Kafka Streams Topology, Log Compaction, and Transactional Processing.</p>
+        <div class="badges">
+            <span class="badge">Spring Boot 3.3.4</span>
+            <span class="badge">Spring Kafka 3.2.4</span>
+            <span class="badge">Kafka Streams 3.7.1</span>
+            <span class="badge">KRaft Mode</span>
+            <span class="badge">Mermaid v10</span>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('system-overview')">System Overview</button>
+        <button class="tab-btn" onclick="switchTab('nonblocking-retries')">1. Non-Blocking Retries</button>
+        <button class="tab-btn" onclick="switchTab('manual-ack')">2. Manual Acknowledgment</button>
+        <button class="tab-btn" onclick="switchTab('kafka-streams')">3. Kafka Streams Analytics & Windowing</button>
+        <button class="tab-btn" onclick="switchTab('log-compaction')">4. Log Compaction & Tombstones</button>
+        <button class="tab-btn" onclick="switchTab('transactions')">5. Exactly-Once Transactions</button>
+        <button class="tab-btn" onclick="switchTab('regional-partitioner')">6. Custom Geo Partitioner</button>
+        <button class="tab-btn" onclick="switchTab('cooperative-rebalance')">7. Cooperative Rebalancing</button>
+        <button class="tab-btn" onclick="switchTab('schema-cdc')">8. Schema Registry & CDC</button>
+        <button class="tab-btn" onclick="switchTab('tiered-replication')">9. Tiered Storage & MirrorMaker 2</button>
+    </div>
+
+    <!-- 0. SYSTEM OVERVIEW -->
+    <div id="system-overview" class="diagram-section active">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">System Architecture Overview</h2>
+                <div class="section-tag">High-Level Topology</div>
+            </div>
+        </div>
+        <p class="section-description">
+            The Spring Boot application orchestrates multiple specialized publishing, consuming, and streaming pipelines interconnected through a high-performance Apache Kafka KRaft broker cluster.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+flowchart TB
+    subgraph REST_API ["REST API Layer (Swagger UI / OpenAPI)"]
+        P1["POST /api/kafka/publish/simple"]
+        P2["POST /api/kafka/publish/nonblocking"]
+        P3["POST /api/kafka/publish/manual-ack"]
+        P4["POST /api/kafka/publish/inventory"]
+        P5["POST /api/kafka/publish/streams-order"]
+        P6["POST /api/kafka/publish/transaction"]
+        Audit["GET /api/kafka/audit/*"]
+    end
+
+    subgraph PRODUCER_SERVICE ["Kafka Producer Service"]
+        KT1["KafkaTemplate&lt;String, OrderEvent&gt;"]
+        KT2["KafkaTemplate&lt;String, Object&gt; (Generic/Tombstones)"]
+    end
+
+    subgraph KAFKA_CLUSTER ["Apache Kafka KRaft Broker (localhost:9092)"]
+        T1[("orders.standard\n(3 Partitions)")]
+        T2[("orders.nonblocking\n(3 Partitions)")]
+        T2_R1[("orders.nonblocking-retry-1000")]
+        T2_R2[("orders.nonblocking-retry-2000")]
+        T2_DLT[("orders.nonblocking-dlt")]
+        T3[("orders.manual-ack\n(3 Partitions)")]
+        T4[("inventory.compacted\n(compact cleanup)")]
+        T5[("streams.orders.input")]
+        T6[("streams.analytics.output")]
+        T7[("events.transactional\n(tx- prefix)")]
+    end
+
+    subgraph CONSUMER_SERVICES ["Spring Kafka Consumers & Streams"]
+        C1["Standard Consumer (RECORD ack)"]
+        C2["Non-Blocking Consumer (@RetryableTopic)"]
+        C3["Manual Ack Consumer (MANUAL_IMMEDIATE)"]
+        C4["Compacted Table Consumer (In-Memory Key/Value)"]
+        ST1["Kafka Streams Topology (Windowless Aggregate)"]
+    end
+
+    P1 & P6 --> KT1
+    P2 & P3 & P5 --> KT1
+    P4 --> KT2
+
+    KT1 --> T1 & T2 & T3 & T5 & T7
+    KT2 --> T4
+
+    T1 --> C1
+    T2 --> C2
+    C2 -.->|Exponential Retry| T2_R1 -.-> T2_R2 -.-> T2_DLT
+    T3 --> C3
+    T4 --> C4
+    T5 --> ST1
+    ST1 -->|Aggregated StreamAnalytics| T6
+
+    C1 & C2 & C3 & C4 & ST1 -.->|Inspect Metrics & Audits| Audit
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Key Architectural Highlights:</h4>
+            <ul>
+                <li><strong>Unified Dual Templates:</strong> Dedicated strongly-typed template for domain events plus a generic Object template for tombstone deletion semantics.</li>
+                <li><strong>Partition Hashing:</strong> Orders keyed by <code>customerId</code> guarantee strict in-order sequential processing per customer across all consumer replicas.</li>
+                <li><strong>Separation of Concerns:</strong> High-throughput standard orders, batch workloads, non-blocking retries, and compacted inventory operate on dedicated topic partitions.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 1. NON-BLOCKING RETRIES -->
+    <div id="nonblocking-retries" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">1. Non-Blocking Retry Topics Pattern</h2>
+                <div class="section-tag">@RetryableTopic + Exponential Backoff</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Traditional blocking retries sleep the consumer thread, stalling processing for all subsequent healthy messages on the same partition (Head-of-Line Blocking).
+            Spring Kafka's <code>@RetryableTopic</code> reroutes failed messages to separate retry topics with backoff delays, allowing subsequent messages to proceed immediately.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Producer as KafkaProducerService
+    participant MainTopic as orders.nonblocking
+    participant Consumer as NonBlocking Consumer
+    participant Retry1 as orders.nonblocking-retry-1000 (1s)
+    participant Retry2 as orders.nonblocking-retry-2000 (2s)
+    participant DLT as orders.nonblocking-dlt (@DltHandler)
+
+    Client->>Producer: POST /publish/nonblocking (fail=true)
+    Producer->>MainTopic: send(OrderEvent, fail=true)
+    MainTopic->>Consumer: consumeNonblocking() [Attempt 1]
+    Note over Consumer: Throws RuntimeException!<br/>Simulated failure
+    Consumer-->>Retry1: Forwarded with backoff (delay=1000ms)
+    Note over MainTopic: Next healthy message<br/>processes IMMEDIATELY!
+
+    Retry1->>Consumer: retryConsumer [Attempt 2 after 1s]
+    Note over Consumer: Throws RuntimeException!
+    Consumer-->>Retry2: Forwarded with backoff (delay=2000ms)
+
+    Retry2->>Consumer: retryConsumer [Attempt 3 after 2s]
+    Note over Consumer: Retries Exhausted!
+    Consumer-->>DLT: Forward to Dead Letter Topic
+    DLT->>Consumer: handleNonblockingDlt()
+    Note over Consumer: Recorded in nonblockingRecords<br/>status: DLT_EXHAUSTED
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Advantages of Non-Blocking Retries:</h4>
+            <ul>
+                <li><strong>Zero Head-of-Line Blocking:</strong> A poisoned or failing message never blocks partition offset progression for remaining messages.</li>
+                <li><strong>Dynamic Exponential Backoff:</strong> Uses separate topics with graduated delays (<code>delay = 1000ms, multiplier = 2.0</code>).</li>
+                <li><strong>Automated DLT Recovery:</strong> Captures terminal failures in <code>@DltHandler</code> for immediate alerting and diagnosis.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 2. MANUAL ACKNOWLEDGMENT -->
+    <div id="manual-ack" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">2. Manual Acknowledgment & Nack Backpressure</h2>
+                <div class="section-tag">AckMode.MANUAL_IMMEDIATE</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Provides fine-grained programmatic control over consumer offsets. When processing succeeds, <code>acknowledgment.acknowledge()</code> commits the offset immediately to Kafka.
+            When transient downstream errors occur, <code>acknowledgment.nack(Duration.ofMillis(1000))</code> pauses polling and initiates controlled redelivery without losing position.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+flowchart TD
+    Start([Message Arrives from orders.manual-ack]) --> Ingest[Consumer receives ConsumerRecord & Acknowledgment]
+    Ingest --> Check{Simulate Failure or Downstream Error?}
+
+    Check -- No (Success) --> Process[Execute Business Logic / DB Persistence]
+    Process --> Ack[Call acknowledgment.acknowledge]
+    Ack --> CommitBroker[Kafka Broker: Consumer Offset Committed Immediately]
+    CommitBroker --> AuditSuccess[Record added with status: ACKNOWLEDGED_IMMEDIATE]
+
+    Check -- Yes (Failure) --> Nack[Call acknowledgment.nack 1000ms]
+    Nack --> Pause[Listener Container Pauses Fetcher Thread for 1000ms]
+    Pause --> Redeliver[Kafka Consumer re-seeks partition to current uncommitted offset]
+    Redeliver --> AuditNack[Record added with status: NACKED_1000MS]
+
+    style Ack fill:#10b981,stroke:#059669,color:#fff
+    style Nack fill:#ef4444,stroke:#dc2626,color:#fff
+    style CommitBroker fill:#38bdf8,stroke:#0284c7,color:#0f172a
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Manual Acknowledgment Capabilities:</h4>
+            <ul>
+                <li><strong>Deterministic Commit Timing:</strong> Guarantees that message offset is committed only <em>after</em> external operations (such as SQL write or remote RPC) succeed.</li>
+                <li><strong>Graceful Backpressure via <code>nack()</code>:</strong> Gives downstream databases or services time to recover without crashing container threads.</li>
+                <li><strong>Container Setting:</strong> Configured via <code>factory.getContainerProperties().setAckMode(AckMode.MANUAL_IMMEDIATE)</code>.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 3. KAFKA STREAMS -->
+    <div id="kafka-streams" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">3. Real-Time Kafka Streams Aggregation</h2>
+                <div class="section-tag">Streams DSL & Materialized State Store</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Continuous event stream processing topology consuming incoming order records from <code>streams.orders.input</code>, re-partitioning by <code>customerId</code>,
+            and maintaining a running aggregate of cumulative order count, total spend, and average spend inside a materialized in-memory key-value store.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+flowchart LR
+    subgraph INGESTION ["1. Ingestion"]
+        InputTopic[("streams.orders.input")]
+    end
+
+    subgraph TOPOLOGY ["2. Kafka Streams Topology DSL"]
+        StreamSrc["builder.stream(topic, JsonSerde)"]
+        KeySelect["map: Select Key (customerId)"]
+        Group["groupByKey()"]
+        Agg["aggregate()<br/>- count + 1<br/>- totalSpend += price * qty<br/>- avgSpend = total / count"]
+        MatStore[("Materialized State Store<br/>customer-analytics-store<br/>(In-Memory KeyValueStore)")]
+        ToStream["toStream()"]
+    end
+
+    subgraph OUTPUT ["3. Egress & Interactive Queries"]
+        OutTopic[("streams.analytics.output")]
+        IQ["REST Point Query:<br/>/api/kafka/audit/streams/analytics/{customerId}"]
+    end
+
+    InputTopic --> StreamSrc --> KeySelect --> Group --> Agg
+    Agg <--> MatStore
+    Agg --> ToStream --> OutTopic
+    MatStore -.->|Interactive Query| IQ
+
+    style InputTopic fill:#f59e0b,stroke:#d97706,color:#0f172a
+    style OutTopic fill:#10b981,stroke:#059669,color:#fff
+    style MatStore fill:#a855f7,stroke:#9333ea,color:#fff
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Kafka Streams Architecture Benefits:</h4>
+            <ul>
+                <li><strong>Embedded Processing Engine:</strong> No separate Spark or Flink cluster required; runs natively inside the Spring Boot container.</li>
+                <li><strong>Native In-Memory Materialization:</strong> Avoids native C++ RocksDB shared library dependencies, ensuring 100% portable execution on ARM64 and Linux PRoot.</li>
+                <li><strong>Interactive Queryability:</strong> State stores can be queried in real time via REST endpoints (<code>ReadOnlyKeyValueStore</code>).</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 4. LOG COMPACTION -->
+    <div id="log-compaction" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">4. Kafka Log Compaction & Tombstone Deletion</h2>
+                <div class="section-tag">cleanup.policy = compact</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Log compaction ensures that Kafka retains at least the last known value for each record key within the partition log.
+            Sending a record with a non-null key and a <code>null</code> value creates a <strong>tombstone record</strong>, instructing Kafka's log cleaner to delete the key permanently.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+flowchart TB
+    subgraph LOG_BEFORE ["Partition Log (Before Compaction)"]
+        O0["Offset 0: K='SKU-LAPTOP', V='Stock: 100'"]
+        O1["Offset 1: K='SKU-PHONE',  V='Stock: 50'"]
+        O2["Offset 2: K='SKU-LAPTOP', V='Stock: 95'"]
+        O3["Offset 3: K='SKU-TABLET', V='Stock: 20'"]
+        O4["Offset 4: K='SKU-PHONE',  V=null (TOMBSTONE)"]
+        O5["Offset 5: K='SKU-LAPTOP', V='Stock: 90'"]
+    end
+
+    subgraph CLEANER ["Kafka Log Cleaner Thread (Segment Roll & Clean)"]
+        CleanOp["Identifies latest offset for each key.<br/>Discards superseded intermediate records.<br/>Retains tombstone until delete.retention.ms expires."]
+    end
+
+    subgraph LOG_AFTER ["Partition Log (After Compaction)"]
+        AO3["Offset 3: K='SKU-TABLET', V='Stock: 20'"]
+        AO4["Offset 4: K='SKU-PHONE',  V=null (Deleted)"]
+        AO5["Offset 5: K='SKU-LAPTOP', V='Stock: 90'"]
+    end
+
+    LOG_BEFORE --> CLEANER --> LOG_AFTER
+
+    style O4 fill:#ef4444,stroke:#dc2626,color:#fff
+    style AO4 fill:#ef4444,stroke:#dc2626,color:#fff
+    style AO5 fill:#10b981,stroke:#059669,color:#fff
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Log Compaction Properties & Rules:</h4>
+            <ul>
+                <li><strong>Configuration:</strong> <code>cleanup.policy=compact</code>, <code>min.compaction.lag.ms=0</code>, and <code>segment.ms=10000</code>.</li>
+                <li><strong>Table-Stream Duality:</strong> Converts a changelog event stream into a materialized key-value table representation.</li>
+                <li><strong>Tombstone Cleanup:</strong> A record with <code>payload == null</code> signals deletion. Once <code>delete.retention.ms</code> elapses, both the key and tombstone are removed from disk.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 5. TRANSACTIONS -->
+    <div id="transactions" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">5. Exactly-Once Semantics & Transactional Publishing</h2>
+                <div class="section-tag">2-Phase Commit (2PC) on Kafka</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Atomic multi-message and multi-partition publishing using Kafka's transaction coordinator. Read-committed consumers will never observe partial or aborted batches.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant App as Spring Boot Service
+    participant Producer as KafkaTemplate
+    participant Coord as Kafka Transaction Coordinator
+    participant Partitions as Topic Partitions (P0, P1)
+    participant Consumer as Read-Committed Consumer
+
+    App->>Producer: executeInTransaction(operations -> { ... })
+    Producer->>Coord: InitTransactions(transactional.id = tx-1)
+    Coord-->>Producer: Assigned PID & Epoch
+    Producer->>Coord: BeginTransaction()
+
+    loop For each event in batch
+        Producer->>Partitions: Write Record with PID/SequenceNumber
+    end
+
+    alt All writes succeed
+        App->>Producer: Return true
+        Producer->>Coord: EndTxnRequest(COMMIT)
+        Coord->>Partitions: Write COMMIT marker
+        Partitions-->>Consumer: Records become visible (isolation.level=read_committed)
+    else Any write or business exception occurs
+        App->>Producer: Exception thrown
+        Producer->>Coord: EndTxnRequest(ABORT)
+        Coord->>Partitions: Write ABORT marker
+        Note over Consumer: Records skipped & ignored!<br/>Zero dirty reads
+    end
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Transactional Guarantees:</h4>
+            <ul>
+                <li><strong>Atomic Multi-Partition Writes:</strong> All messages across diverse topics/partitions commit or abort as an atomic unit.</li>
+                <li><strong>Idempotent Producer:</strong> Prevents duplicates caused by network retries via internal sequence numbers (<code>enable.idempotence=true</code>).</li>
+                <li><strong>Zombie Fencing:</strong> Producer epochs prevent older zombie producer instances from writing to partitions after rebalances.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 6. REGIONAL PARTITIONER -->
+    <div id="regional-partitioner" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">6. Custom Geographic Partitioner (RegionAwarePartitioner)</h2>
+                <div class="section-tag">Custom Partitioner Routing</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Bypasses default Murmur2 hashing to enforce business-aware routing across Kafka partitions based on key prefixes, ensuring regional data locality and partition-level isolation.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+flowchart LR
+    subgraph INCOMING ["Incoming ProducerRecords"]
+        R1["Key: 'US-CUST-101'\n(North America)"]
+        R2["Key: 'EU-CUST-202'\n(Europe)"]
+        R3["Key: 'APAC-CUST-303'\n(Asia-Pacific)"]
+        R4["Key: 'GENERIC-99'\n(Fallback)"]
+    end
+
+    subgraph PARTITIONER ["RegionAwarePartitioner"]
+        Logic{"Prefix Evaluation:\n- startsWith('US-') -> 0\n- startsWith('EU-') -> 1\n- startsWith('APAC-') -> 2\n- else -> hash() % N"}
+    end
+
+    subgraph TOPIC_PARTITIONS ["orders.standard (3 Partitions)"]
+        P0[("Partition 0\n[US Region Data]")]
+        P1[("Partition 1\n[EU Region Data]")]
+        P2[("Partition 2\n[APAC Region Data]")]
+    end
+
+    R1 --> Logic
+    R2 --> Logic
+    R3 --> Logic
+    R4 --> Logic
+
+    Logic -->|Prefix 'US-'| P0
+    Logic -->|Prefix 'EU-'| P1
+    Logic -->|Prefix 'APAC-'| P2
+    Logic -->|Hash Fallback| P0 & P1 & P2
+
+    style P0 fill:#38bdf8,stroke:#0284c7,color:#0f172a
+    style P1 fill:#10b981,stroke:#059669,color:#fff
+    style P2 fill:#f59e0b,stroke:#d97706,color:#0f172a
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Custom Partitioner Mechanics:</h4>
+            <ul>
+                <li><strong>Configured in application.yml:</strong> <code>spring.kafka.producer.properties.partitioner.class: com.example.springkafka.partitioner.RegionAwarePartitioner</code>.</li>
+                <li><strong>Regional Data Locality:</strong> Eliminates cross-datacenter partition queries for localized analytics consumers.</li>
+                <li><strong>Consistent Fallback:</strong> Any unmatched keys fall back cleanly to <code>Math.abs(key.hashCode()) % numPartitions</code>.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 7. COOPERATIVE REBALANCING -->
+    <div id="cooperative-rebalance" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">7. Cooperative Sticky Rebalancing</h2>
+                <div class="section-tag">CooperativeStickyAssignor</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Traditional Eager rebalancing stops the world across all consumers in the group during membership changes.
+            The <code>CooperativeStickyAssignor</code> performs incremental assignment: only partitions being migrated are revoked, allowing unaffected consumers to continue consuming without interruption.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Broker as Kafka Group Coordinator
+    participant C1 as Consumer 1 (Partitions: P0, P1)
+    participant C2 as Consumer 2 (Partitions: P2)
+    participant C3 as New Consumer 3 (Joining Group)
+
+    Note over C1,C2: Steady State Consumption: P0, P1 on C1; P2 on C2
+    C3->>Broker: JoinGroup Request (New Member)
+    Broker->>C1: Rebalance Triggered (Phase 1: Cooperative Revocation)
+    Broker->>C2: Rebalance Triggered
+    Broker->>C3: Rebalance Triggered
+
+    Note over C1: C1 revokes ONLY P1<br/>C1 KEEPS CONSUMING P0!<br/>Zero interruption on P0!
+    Note over C2: C2 KEEPS CONSUMING P2!<br/>Zero interruption on P2!
+
+    C1->>Broker: JoinGroup Response (P1 released)
+    Broker->>C3: Assign P1 to Consumer 3
+    Note over C3: Consumer 3 begins reading P1 immediately
+    Note over C1,C3: Final State: C1->P0, C2->P2, C3->P1
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Cooperative Rebalance Highlights:</h4>
+            <ul>
+                <li><strong>Zero Stop-The-World Spikes:</strong> Consumers unaffected by the partition migration process continue active polling without disruption.</li>
+                <li><strong>Sticky Partitions:</strong> Rebalance algorithm attempts to retain existing partition-to-consumer mappings to preserve local cache hit rates.</li>
+                <li><strong>Configured Property:</strong> <code>spring.kafka.consumer.properties.partition.assignment.strategy: org.apache.kafka.clients.consumer.CooperativeStickyAssignor</code>.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 8. SCHEMA REGISTRY & CDC -->
+    <div id="schema-cdc" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">8. Schema Registry & Change Data Capture (CDC)</h2>
+                <div class="section-tag">Confluent / Apicurio & Debezium Outbox</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Enterprise event architectures decouple producers and consumers through centralized schema governance (Avro / Protobuf) and database log change capture (Debezium CDC), completely eliminating dual-write inconsistencies.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+flowchart LR
+    subgraph APP_DB ["Transactional Outbox (Postgres / MariaDB)"]
+        App["Spring Boot Service"] -->|1. Atomic Local Transaction| DB[("Database\n(Business Tables + outbox_events)")]
+        WAL["Database Write-Ahead Log\n(PostgreSQL WAL / MySQL Binlog)"]
+        DB -.->|Engine Writes| WAL
+    end
+
+    subgraph CDC_ENGINE ["Kafka Connect CDC"]
+        Debezium["Debezium Source Connector\n(Tails WAL stream)"]
+        WAL -->|2. Near-Zero Latency CDC| Debezium
+    end
+
+    subgraph SCHEMA_REG ["Central Schema Registry"]
+        Registry[("Schema Registry\n(Version 1, 2... Avro/Protobuf)")]
+    end
+
+    subgraph BROKER ["Kafka Cluster"]
+        Topic[("orders.cdc.events\n(Binary Avro + Schema ID)")]
+    end
+
+    subgraph SINK ["Downstream Consumers & Analytics"]
+        ES["Elasticsearch / OpenSearch Sink"]
+        Snowflake["Snowflake / Data Lake Sink"]
+        Microservices["Microservice Event Handlers"]
+    end
+
+    Debezium <-->|Validate & Register Schema| Registry
+    Debezium -->|3. Publish Compact Binary Event| Topic
+    Topic --> Microservices
+    Topic --> ES
+    Topic --> Snowflake
+
+    style DB fill:#38bdf8,stroke:#0284c7,color:#0f172a
+    style Debezium fill:#10b981,stroke:#059669,color:#fff
+    style Registry fill:#a855f7,stroke:#9333ea,color:#fff
+    style Topic fill:#f59e0b,stroke:#d97706,color:#0f172a
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>CDC & Schema Registry Advantages:</h4>
+            <ul>
+                <li><strong>No Dual-Write Vulnerability:</strong> The application writes only to its local database transaction; Debezium guarantees eventual dispatch to Kafka.</li>
+                <li><strong>Schema Compatibility Rules:</strong> Enforces <code>BACKWARD</code>, <code>FORWARD</code>, and <code>FULL</code> compatibility checks to prevent client crashes.</li>
+                <li><strong>Compact Binary Payloads:</strong> Avro and Protobuf eliminate repetitive JSON field strings, decreasing payload sizes by up to 80%.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 9. TIERED STORAGE & MIRRORMAKER 2 -->
+    <div id="tiered-replication" class="diagram-section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">9. Tiered Storage (KIP-405) & MirrorMaker 2.0 Disaster Recovery</h2>
+                <div class="section-tag">Infinite Event Retention & Multi-Cluster Replication</div>
+            </div>
+        </div>
+        <p class="section-description">
+            Tiered Storage offloads aged log segments to cloud object storage (S3 / GCS) while keeping hot segments on local NVMe SSDs.
+            MirrorMaker 2.0 replicates topic topologies, partition offsets, and ACLs across geo-distributed primary and secondary clusters.
+        </p>
+        <div class="mermaid-container">
+            <div class="mermaid">
+flowchart TB
+    subgraph PRIMARY_CLUSTER ["Primary Data Center (Active Region US-East)"]
+        P_Broker["Kafka KRaft Broker"]
+        P_SSD[("Local NVMe SSD\n[Hot Segments: Hours / Days]")]
+        P_Broker <--> P_SSD
+    end
+
+    subgraph TIERED_STORAGE ["Tiered Storage Layer (KIP-405)"]
+        S3[("Cloud Object Storage (AWS S3 / GCS / MinIO)\n[Cold Historical Segments: Months / Years]")]
+        P_Broker -.->|Automatic Segment Offload| S3
+    end
+
+    subgraph REPLICATION ["Disaster Recovery Engine"]
+        MM2["MirrorMaker 2.0\n(Offset Sync & Partition Mapping)"]
+    end
+
+    subgraph DR_CLUSTER ["Disaster Recovery Region (Passive EU-West)"]
+        DR_Broker["Kafka KRaft Standby Broker"]
+        DR_SSD[("Local Storage\n[Mirrored Topics: us-east.orders.*]")]
+        DR_Broker <--> DR_SSD
+    end
+
+    P_Broker ==>|Bidirectional / Active-Passive Sync| MM2 ==> DR_Broker
+
+    style P_SSD fill:#38bdf8,stroke:#0284c7,color:#0f172a
+    style S3 fill:#a855f7,stroke:#9333ea,color:#fff
+    style MM2 fill:#10b981,stroke:#059669,color:#fff
+    style DR_SSD fill:#f59e0b,stroke:#d97706,color:#0f172a
+            </div>
+        </div>
+        <div class="key-takeaways">
+            <h4>Tiered Storage & MirrorMaker 2.0 Benefits:</h4>
+            <ul>
+                <li><strong>Infinite Log Retention:</strong> Keeps months of historical data searchable by offsets without overloading expensive broker SSDs.</li>
+                <li><strong>Transparent Catch-Up Consumption:</strong> Consumers reading historical offsets automatically fetch from S3 without broker code changes.</li>
+                <li><strong>Cross-Cluster DR:</strong> MirrorMaker 2.0 synchronizes topic consumer offsets for seamless failover with near-zero RTO.</li>
+            </ul>
+        </div>
+    </div>
+
+    <footer>
+        <p>Spring Kafka Showcase &copy; 2026 | Comprehensive Enterprise Messaging Reference</p>
+    </footer>
+</div>
+
+<script>
+    // Initialize Mermaid with dark theme
+    mermaid.initialize({
+        startOnLoad: true,
+        theme: 'dark',
+        themeVariables: {
+            darkMode: true,
+            background: '#090d16',
+            primaryColor: '#38bdf8',
+            primaryTextColor: '#f8fafc',
+            primaryBorderColor: '#0284c7',
+            lineColor: '#94a3b8',
+            secondaryColor: '#1e293b',
+            tertiaryColor: '#0f172a'
+        },
+        securityLevel: 'loose'
+    });
+
+    function switchTab(sectionId) {
+        // Update tab buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        // Update sections
+        document.querySelectorAll('.diagram-section').forEach(sec => sec.classList.remove('active'));
+        const target = document.getElementById(sectionId);
+        if (target) {
+            target.classList.add('active');
+        }
+    }
+</script>
+
+</body>
+</html>

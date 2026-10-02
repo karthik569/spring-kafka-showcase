@@ -116,20 +116,104 @@ The application runs on port `8080` and connects to Termux's local Apache Kafka 
 - **`void consumeDeadLetterTopic(OrderEvent failedEvent, int partition, long offset, String topic, String key)`**:
   - *Annotation*: `@KafkaListener(topics = "orders.retryable.DLT", groupId = "dlt-monitor-group")`.
   - *Operation*: Intercepts dead letters from the DLT topic, recording them in `dltRecords` for operational alerting.
+- **`void consumeNonblocking(OrderEvent event, String topic, int partition, long offset, String key)`**:
+  - *Annotations*: `@RetryableTopic(attempts = "3", backoff = @Backoff(delay = 1000, multiplier = 2.0))` and `@KafkaListener(topics = "orders.nonblocking", groupId = "nonblocking-orders-group")`.
+  - *Non-Blocking Semantics*: Failed messages are forwarded to separate retry topics with graduated backoff delays without stalling other records on the partition.
+- **`void handleNonblockingDlt(OrderEvent failedEvent, ...)`**:
+  - *Annotation*: `@DltHandler`.
+  - *Operation*: Captures messages after all 3 non-blocking retry attempts are exhausted.
+- **`void consumeManualAck(ConsumerRecord<String, OrderEvent> record, Acknowledgment acknowledgment)`**:
+  - *Annotation*: `@KafkaListener(topics = "orders.manual-ack", containerFactory = "manualAckContainerFactory")`.
+  - *Operation*: Implements programmatic commit via `acknowledgment.acknowledge()` on success, or `acknowledgment.nack(Duration.ofMillis(1000))` backpressure redelivery on failure.
+- **`void consumeCompactedInventory(ConsumerRecord<String, InventoryItem> record)`**:
+  - *Annotation*: `@KafkaListener(topics = "inventory.compacted", groupId = "inventory-compacted-group")`.
+  - *Log Compaction & Tombstones*: Updates in-memory inventory state map for non-null items; deletes the key when `record.value() == null` (tombstone record).
 
 ---
 
-### D. REST Controllers Layer
+### D. Kafka Streams Real-Time Processing Layer
+
+#### [`OrderStreamsService.java`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/service/OrderStreamsService.java)
+- **`void startTopology()`**:
+  - *Topology Flow*:
+    1. Consumes `OrderEvent` stream from `streams.orders.input`.
+    2. Maps records to key by `customerId`.
+    3. Groups by key (`groupByKey()`).
+    4. Aggregates cumulative `orderCount`, `totalSpend`, and `averageSpend`.
+    5. Materializes results into an in-memory key-value state store (`customer-analytics-store`).
+    6. Emits updated `StreamAnalytics` records downstream to `streams.analytics.output`.
+  - *Robustness*: Configured with in-memory state stores (`Stores.inMemoryKeyValueStore(...)`) to run seamlessly across all environments including ARM64 PRoot without requiring native C++ RocksDB binaries.
+- **`Optional<StreamAnalytics> getAnalyticsForCustomer(String customerId)`**:
+  - Performs real-time interactive point queries against the local materialized state store.
+- **`List<StreamAnalytics> getAllAnalytics()`**:
+  - Iterates over all materialized customer records in the state store.
+
+---
+
+### E. REST Controllers Layer
 
 #### [`KafkaProducerController.java`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaProducerController.java)
-- **`POST /api/kafka/publish/simple`**: Calls `producerService.sendAsync("orders.standard", order.orderId(), order)`.
-- **`POST /api/kafka/publish/partitioned?partition=N`**: Calls `producerService.sendWithHeaders("orders.standard", partition, order.orderId(), order)`.
-- **`POST /api/kafka/publish/priority`**: Calls `producerService.sendAsync("orders.high-priority", order.orderId(), order)`.
+- **`POST /api/kafka/publish/simple`**: Publishes asynchronous order to `orders.standard`.
+- **`POST /api/kafka/publish/partitioned?partition=N`**: Publishes to specific partition with distributed tracing headers.
+- **`POST /api/kafka/publish/priority`**: Publishes high-priority order (filtered by consumer).
 - **`POST /api/kafka/publish/retry-dlt?fail=true`**: Publishes with failure simulation flag set.
 - **`POST /api/kafka/publish/batch`**: Ingests JSON array of orders and publishes to `orders.batch`.
 - **`POST /api/kafka/publish/transaction`**: Ingests JSON array and dispatches atomically in `sendInTransaction()`.
+- **`POST /api/kafka/publish/nonblocking?fail=true`**: Publishes to `orders.nonblocking` to test `@RetryableTopic` exponential backoff.
+- **`POST /api/kafka/publish/manual-ack?fail=false`**: Publishes to `orders.manual-ack` to demonstrate `AckMode.MANUAL_IMMEDIATE` and `nack()`.
+- **`POST /api/kafka/publish/inventory`**: Publishes state update to compacted topic `inventory.compacted`.
+- **`DELETE /api/kafka/publish/inventory/tombstone/{skuCode}`**: Sends tombstone (`null` value) record to delete SKU key from compacted topic.
+- **`POST /api/kafka/publish/streams-order`**: Publishes orders to `streams.orders.input` for real-time Kafka Streams aggregation.
+- **`POST /api/kafka/publish/avro`**: Encodes domain `OrderEvent` into raw Apache Avro binary bytes conforming to `OrderAvroRecord` schema and publishes to `orders.avro`.
 
 #### [`KafkaAuditController.java`](file:///sdcard/Download/termux/spring-kafka-showcase/src/main/java/com/example/springkafka/controller/KafkaAuditController.java)
 - **`GET /api/kafka/audit/received`**: Returns list of all processed events with partitions and offsets.
 - **`GET /api/kafka/audit/dlt`**: Returns list of all dead letters.
-- **`GET /api/kafka/audit/summary`**: Returns total counts and operational health.
+- **`GET /api/kafka/audit/nonblocking`**: Returns non-blocking retry processed and DLT-exhausted records.
+- **`GET /api/kafka/audit/manual-ack`**: Returns manually committed and nacked audit records.
+- **`GET /api/kafka/audit/inventory`**: Returns current state of warehouse inventory derived from the compacted log.
+- **`GET /api/kafka/audit/streams/analytics`**: Returns all customer analytics computed by Kafka Streams topology.
+- **`GET /api/kafka/audit/streams/analytics/{customerId}`**: Interactive point query on Kafka Streams state store for a specific customer.
+- **`GET /api/kafka/audit/streams/analytics/windowed`**: Returns 1-minute tumbling window metrics.
+- **`GET /api/kafka/audit/avro`**: Returns deserialized Apache Avro records received from `orders.avro`.
+- **`GET /api/kafka/audit/avro/schema`**: Returns official JSON specification of the Apache Avro schema.
+- **`GET /api/kafka/audit/summary`**: Returns total counts and operational health summary across all pipelines.
+
+---
+
+### F. Enterprise Kafka Capabilities Added
+
+1. **Apache Avro Binary Serialization (`AvroSerializerService.java`)**:
+   - Canonical `OrderAvroRecord` schema.
+   - Low-footprint binary encoding via `BinaryEncoder` & `BinaryDecoder` (~40-60% payload size reduction vs JSON).
+   - Dedicated `ByteArrayDeserializer` container factory (`byteArrayContainerFactory`) and `ByteArraySerializer` Kafka template (`byteArrayKafkaTemplate`).
+
+2. **Custom Geographic Routing (`RegionAwarePartitioner.java`)**:
+   - `US-*` keys route directly to Partition 0.
+   - `EU-*` keys route directly to Partition 1.
+   - `APAC-*` keys route directly to Partition 2.
+   - Other keys route via standard Murmur2 hash modulo partitions.
+
+3. **Cooperative Sticky Rebalancing (`CooperativeStickyAssignor`)**:
+   - Replaces eager "stop-the-world" rebalance protocol. Only affected partitions migrate between consumer instances.
+
+4. **1-Minute Tumbling Window Stream Analytics (`OrderStreamsService.java`)**:
+   - Aggregates velocity, spend, and volume over fixed 1-minute non-overlapping time windows using Kafka Streams `TimeWindows.ofSizeWithNoGrace()`.
+
+---
+
+### G. Interactive Architecture Diagrams (HTML)
+
+The project includes an interactive, browser-ready architectural visualizer:
+- **File**: [`kafka-architecture-diagrams.html`](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/kafka-architecture-diagrams.html)
+- Contains rendered Mermaid.js diagrams for:
+  1. Complete System Architecture Overview
+  2. Non-Blocking Retries (`@RetryableTopic`) Sequence
+  3. Manual Acknowledgment & Nack Backpressure Flow
+  4. Real-Time Kafka Streams Topology & State Store
+  5. Log Compaction & Tombstone Deletion Mechanics
+  6. Exactly-Once Transaction Lifecycle (2-Phase Commit)
+  7. Geographic Region-Aware Partitioner Flow
+  8. Cooperative Sticky Assignor vs Eager Rebalancing
+  9. Schema Registry, Avro & CDC Pipeline
+

@@ -22,7 +22,7 @@ class KafkaProducerControllerTest {
 
     static class StubProducerService extends KafkaProducerService {
         public StubProducerService() {
-            super(null);
+            super(null, null);
         }
 
         @Override
@@ -47,7 +47,10 @@ class KafkaProducerControllerTest {
 
     @BeforeEach
     void setUp() {
-        KafkaProducerController controller = new KafkaProducerController(new StubProducerService());
+        KafkaProducerController controller = new KafkaProducerController(
+                new StubProducerService(),
+                new com.example.springkafka.avro.AvroSerializerService()
+        );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

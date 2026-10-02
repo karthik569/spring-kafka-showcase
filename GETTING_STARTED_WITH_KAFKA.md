@@ -59,9 +59,9 @@ flowchart LR
 
 ## 🏛 2. Architecture of This Showcase
 
-This application demonstrates 6 distinct publishing and consumption patterns:
+This application demonstrates 10 enterprise publishing, consuming, streaming, and retention patterns:
 
-| Topic | Partitions | Consumer Group | Key Capabilities Demonstrated |
+| Topic | Partitions | Consumer / Engine | Key Capabilities Demonstrated |
 | :--- | :---: | :--- | :--- |
 | `orders.standard` | 3 | `standard-consumers-group` | Key-based partition routing, tracing headers (`X-Correlation-ID`) |
 | `orders.high-priority` | 2 | `vip-orders-group` | `RecordFilterStrategy` (drops non-HIGH priority records upstream) |
@@ -69,6 +69,12 @@ This application demonstrates 6 distinct publishing and consumption patterns:
 | `orders.retryable.DLT` | 1 | `dlt-monitor-group` | Dead Letter Topic consumer capturing poisoned payloads |
 | `orders.batch` | 3 | `batch-consumers-group` | High-throughput batch consumption (`List<ConsumerRecord>`) |
 | `events.transactional`| 2 | - | Atomic multi-message commits (`executeInTransaction`) |
+| `orders.nonblocking` | 3 | `nonblocking-orders-group` | **Non-Blocking Retries (`@RetryableTopic`)** with exponential backoff |
+| `orders.manual-ack` | 3 | `manual-ack-group` | **Manual Acknowledgment (`AckMode.MANUAL_IMMEDIATE`)** & backpressure nacks |
+| `inventory.compacted`| 3 | `inventory-compacted-group`| **Log Compaction (`cleanup.policy=compact`)** & Tombstones |
+| `streams.orders.input`| 3 | Kafka Streams Engine | **Kafka Streams Real-Time Aggregation** & In-Memory State Store |
+
+> 🎨 **Interactive Diagrams**: Open [kafka-architecture-diagrams.html](file:///sdcard/Download/termux/spring-framework-6/spring-kafka-showcase/kafka-architecture-diagrams.html) in any browser to view live interactive Mermaid diagrams for all 10 patterns.
 
 ---
 
@@ -249,7 +255,93 @@ curl -X POST http://localhost:8080/api/kafka/publish/transaction \
 
 ---
 
-### Exercise 7: Inspecting the In-Memory Audit Trail
+### Exercise 7: Non-Blocking Retries (@RetryableTopic)
+Failed messages do not stall the partition. They are forwarded with exponential backoff (1s, 2s) to separate retry topics:
+
+```bash
+# A) Send failing order (triggers non-blocking backoff and routes to DLT)
+curl -X POST "http://localhost:8080/api/kafka/publish/nonblocking?fail=true" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"NB-FAIL-1","customerId":"CUST-NB","skuCode":"PIXEL-9","quantity":1,"price":799.0,"priority":"NORMAL","simulateFailure":true}'
+
+# B) Send healthy order (processes IMMEDIATELY without waiting for failed retries)
+curl -X POST "http://localhost:8080/api/kafka/publish/nonblocking?fail=false" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"NB-OK-1","customerId":"CUST-NB","skuCode":"PIXEL-9","quantity":1,"price":799.0,"priority":"NORMAL","simulateFailure":false}'
+```
+Inspect non-blocking audit trail:
+```bash
+curl http://localhost:8080/api/kafka/audit/nonblocking
+```
+
+---
+
+### Exercise 8: Manual Acknowledgment & Nack Backpressure
+Gives fine-grained programmatic control over offset commits via `AckMode.MANUAL_IMMEDIATE`:
+
+```bash
+# Success: commits offset immediately
+curl -X POST "http://localhost:8080/api/kafka/publish/manual-ack?fail=false" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"MACK-OK-1","customerId":"CUST-M1","skuCode":"GALAXY-S24","quantity":1,"price":899.0,"priority":"NORMAL","simulateFailure":false}'
+
+# Failure: issues negative acknowledgment (nack) with 1-second backpressure pause
+curl -X POST "http://localhost:8080/api/kafka/publish/manual-ack?fail=true" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"MACK-FAIL-1","customerId":"CUST-M2","skuCode":"GALAXY-S24","quantity":1,"price":899.0,"priority":"NORMAL","simulateFailure":true}'
+```
+Inspect manual ack audit trail:
+```bash
+curl http://localhost:8080/api/kafka/audit/manual-ack
+```
+
+---
+
+### Exercise 9: Log Compaction & Tombstone Deletion
+Demonstrates key-value table semantics (`cleanup.policy=compact`):
+
+```bash
+# 1. Update/upsert inventory state for SKU
+curl -X POST http://localhost:8080/api/kafka/publish/inventory \
+  -H "Content-Type: application/json" \
+  -d '{"skuCode":"SKU-LAPTOP-X1","itemName":"ThinkPad Carbon X1","stockQuantity":45,"warehouseCode":"WH-EAST-1","status":"ACTIVE"}'
+
+# 2. View current compacted inventory table
+curl http://localhost:8080/api/kafka/audit/inventory
+
+# 3. Dispatch tombstone (null payload) to delete key from compacted table
+curl -X DELETE http://localhost:8080/api/kafka/publish/inventory/tombstone/SKU-LAPTOP-X1
+
+# 4. Verify key was removed from inventory state
+curl http://localhost:8080/api/kafka/audit/inventory
+```
+
+---
+
+### Exercise 10: Kafka Streams Real-Time Aggregation & Interactive Queries
+Streams order records into a real-time topology, grouping by `customerId` and aggregating total spend and order count:
+
+```bash
+# 1. Ingest order 1 for customer CUST-ALPHA
+curl -X POST http://localhost:8080/api/kafka/publish/streams-order \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"STR-101","customerId":"CUST-ALPHA","skuCode":"MONITOR-4K","quantity":2,"price":300.0,"priority":"NORMAL","simulateFailure":false}'
+
+# 2. Ingest order 2 for same customer
+curl -X POST http://localhost:8080/api/kafka/publish/streams-order \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":"STR-102","customerId":"CUST-ALPHA","skuCode":"KEYBOARD-MECH","quantity":1,"price":150.0,"priority":"NORMAL","simulateFailure":false}'
+
+# 3. Interactive query: fetch aggregated metrics for customer
+curl http://localhost:8080/api/kafka/audit/streams/analytics/CUST-ALPHA
+
+# 4. Interactive query: fetch all customer metrics from state store
+curl http://localhost:8080/api/kafka/audit/streams/analytics
+```
+
+---
+
+### Exercise 11: Inspecting the In-Memory Audit Trail
 
 Check all successfully processed messages:
 ```bash

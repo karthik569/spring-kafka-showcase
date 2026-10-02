@@ -59,4 +59,34 @@ public class KafkaConsumerConfig {
                         deliveryAttempt, record.topic(), record.offset(), ex.getMessage()));
         return errorHandler;
     }
+
+    // 4. Manual Acknowledgment Listener Container Factory
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, OrderEvent> manualAckContainerFactory(
+            ConsumerFactory<String, OrderEvent> consumerFactory) {
+        ConcurrentKafkaListenerContainerFactory<String, OrderEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        factory.getContainerProperties().setAckMode(org.springframework.kafka.listener.ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        return factory;
+    }
+
+    // 5. Binary Byte Array Listener Container Factory (For Apache Avro records)
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, byte[]> byteArrayContainerFactory(
+            org.springframework.boot.autoconfigure.kafka.KafkaProperties kafkaProperties) {
+        java.util.Map<String, Object> props = kafkaProperties.buildConsumerProperties(null);
+        props.put(org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                org.apache.kafka.common.serialization.StringDeserializer.class);
+        props.put(org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                org.apache.kafka.common.serialization.ByteArrayDeserializer.class);
+
+        org.springframework.kafka.core.DefaultKafkaConsumerFactory<String, byte[]> factory =
+                new org.springframework.kafka.core.DefaultKafkaConsumerFactory<>(props);
+
+        ConcurrentKafkaListenerContainerFactory<String, byte[]> containerFactory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        containerFactory.setConsumerFactory(factory);
+        return containerFactory;
+    }
 }
